@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-
-export type ConnectionMode = 'broadcast' | 'read-only' | 'independent';
+import { UserPanel } from './user-panel';
+import type { ConnectionMode } from '@/lib/types';
 
 type TradeDirection = 'CALL' | 'PUT';
 
@@ -39,8 +39,10 @@ const defaultForm = {
   amount: 100,
 };
 
+export type { ConnectionMode };
+
 export function TradeDashboard() {
-  const [loggedIn, setLoggedIn] = useState(true);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [mode, setMode] = useState<ConnectionMode>('broadcast');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [summary, setSummary] = useState<Summary>({
@@ -50,8 +52,29 @@ export function TradeDashboard() {
     commissionRate: 0.03,
   });
   const [form, setForm] = useState(defaultForm);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check if user is authenticated
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/user');
+        if (res.ok) {
+          setLoggedIn(true);
+        }
+      } catch {
+        setLoggedIn(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+
     const load = async () => {
       try {
         const res = await fetch('/api/trades');
@@ -65,9 +88,11 @@ export function TradeDashboard() {
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loggedIn]);
 
   useEffect(() => {
+    if (!loggedIn) return;
+
     const loadSummary = async () => {
       try {
         const res = await fetch('/api/commission');
@@ -86,7 +111,7 @@ export function TradeDashboard() {
     loadSummary();
     const interval = setInterval(loadSummary, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loggedIn]);
 
   const statCards = useMemo(
     () => [
@@ -122,6 +147,24 @@ export function TradeDashboard() {
     }
   };
 
+  if (loading) {
+    return (
+      <main className="page-shell">
+        <div className="app-frame">
+          <header className="topbar">
+            <div>
+              <div className="eyebrow">Copy Trader</div>
+              <h1>Forex Pulse</h1>
+            </div>
+          </header>
+          <div className="auth-card">
+            <p>Loading...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="page-shell">
       <div className="app-frame">
@@ -133,9 +176,6 @@ export function TradeDashboard() {
 
           <div className="header-actions">
             <div className="badge pill-success">3% commission on close</div>
-            <button className="primary-button" onClick={() => setLoggedIn((current) => !current)}>
-              {loggedIn ? 'Log out' : 'Log in'}
-            </button>
           </div>
         </header>
 
@@ -205,7 +245,9 @@ export function TradeDashboard() {
                   </label>
                 </div>
 
-                <button className="success-button full" onClick={handleCreateTrade}>Broadcast Trade to Followers</button>
+                <button className="success-button full" onClick={handleCreateTrade}>
+                  Broadcast Trade to Followers
+                </button>
 
                 <div className="feed-block">
                   <h4>Recent trade feed</h4>
@@ -227,6 +269,8 @@ export function TradeDashboard() {
               </div>
 
               <div className="side-stack">
+                <UserPanel onLogout={() => setLoggedIn(false)} />
+
                 <div className="glass-card panel">
                   <div className="panel-header compact">
                     <h3>Follower accounts</h3>
