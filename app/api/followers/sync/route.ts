@@ -1,45 +1,77 @@
 import { NextResponse } from 'next/server';
-import { saveFollowerAccount, getFollowerAccountByEmail } from '@/lib/db';
+import { decryptToken, getActiveFollowerAccounts, saveTrade, addCommission } from '@/lib/db';
+import { derivClient } from '@/lib/deriv-client';
+import { calculateCommission } from '@/lib/commission';
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
-    const email = payload.email?.toString();
-    const loginId = payload.loginId?.toString();
-    const accountId = payload.accountId?.toString();
-    const accessToken = payload.accessToken?.toString();
-    const refreshToken = payload.refreshToken?.toString();
-    const scopes = Array.isArray(payload.scopes) ? payload.scopes.map((scope) => String(scope)) : ['read'];
+    const body = await req.json();
+    const symbol = body.symbol ?? 'EURUSD';
+    const direction = body.direction ?? 'CALL';
+    const amount = Number(body.amount ?? 100);
+    const price = Number(body.price ?? 1.09);
 
-    if (!email || !accessToken || !accountId) {
-      return NextResponse.json(
-        { error: 'email, accountId, and accessToken are required' },
-        { status: 400 }
-      );
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 400 });
     }
 
-    const existing = getFollowerAccountByEmail(email);
-    const followerId = existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const followers = getActiveFollowerAccounts();
+    const results: Array<{ followerId: string; success: boolean; contractId?: number; error?: string }> = [];
 
-    const follower = saveFollowerAccount({
-      id: followerId,
-      userId: followerId,
-      email,
-      loginId: loginId ?? `login_${Date.now()}`,
-      accountId,
-      accessToken,
-      refreshToken,
-      scopes,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+    for (const follower of followers) {
+      try {
+        const token = decryptToken(follower.accessToken);
+        const response = await derivClient.executeTrade(token, {
+          symbol,
+          contract_type: direction,
+          amount,
+          duration: 60,
+          duration_unit: 'm',
+          currency: 'USD',
+        });
 
-    return NextResponse.json({ ok: true, follower });
+        const commission = calculateCommission(amount);
+        const tradeRecord = saveTrade({
+          id: `trade_${Date.now()}_${follower.id}`,
+          symbol,
+          direction,
+          amount,
+          price,
+          commission,
+          status: 'open',
+          createdAt: new Date().toISOString(),
+          broadcaster: 'You',
+          followerCount: followers.length,
+          contractId: response.buy.contract_id,
+          followerId: follower.id,
+        });
+
+        addCommission({
+          tradeId: tradeRecord.id,
+          followerId: follower.id,
+          amount: commission,
+          rate: 0.03,
+        });
+
+        results.push({
+          followerId: follower.id,
+          success: true,
+          contractId: response.buy.contract_id,
+        });
+      } catch (error) {
+        results.push({
+          followerId: follower.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to sync follower trade',
+        });
+      }
+    }
+
+    return NextResponse.json({ ok: true, results, followerCount: followers.length });
   } catch (error) {
-    console.error('Link follower failed:', error);
+    console.error('Follower sync route failed:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to link follower' },
+      { error: error instanceof Error ? error.message : 'Failed to sync followers' },
       { status: 500 }
     );
   }
