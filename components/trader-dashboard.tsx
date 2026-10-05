@@ -17,6 +17,13 @@ type Trade = {
   followerCount: number;
 };
 
+type Summary = {
+  totalVolume: number;
+  totalCommission: number;
+  openTrades: number;
+  commissionRate: number;
+};
+
 const followers = [
   { name: 'Ava', account: 'CR123', balance: 12000 },
   { name: 'Leo', account: 'CR456', balance: 9000 },
@@ -33,32 +40,44 @@ const defaultForm = {
 export function TraderDashboard() {
   const [loggedIn, setLoggedIn] = useState(true);
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [summary, setSummary] = useState({ totalVolume: 0, totalCommission: 0, openTrades: 0, commissionRate: 0.03 });
+  const [summary, setSummary] = useState<Summary>({
+    totalVolume: 0,
+    totalCommission: 0,
+    openTrades: 0,
+    commissionRate: 0.03,
+  });
   const [form, setForm] = useState(defaultForm);
 
   useEffect(() => {
     const load = async () => {
-      const res = await fetch('/api/trades');
-      const data = await res.json();
-      setTrades(data.trades ?? []);
+      try {
+        const res = await fetch('/api/trades');
+        const data = await res.json();
+        setTrades(data.trades ?? []);
+      } catch {
+        setTrades([]);
+      }
     };
 
     load();
-
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     const loadSummary = async () => {
-      const res = await fetch('/api/commission');
-      const data = await res.json();
-      setSummary({
-        totalVolume: data.totalVolume ?? 0,
-        totalCommission: data.totalCommission ?? 0,
-        openTrades: data.openTrades ?? 0,
-        commissionRate: data.commissionRate ?? 0.03,
-      });
+      try {
+        const res = await fetch('/api/commission');
+        const data = await res.json();
+        setSummary({
+          totalVolume: data.totalVolume ?? 0,
+          totalCommission: data.totalCommission ?? 0,
+          openTrades: data.openTrades ?? 0,
+          commissionRate: data.commissionRate ?? 0.03,
+        });
+      } catch {
+        setSummary({ totalVolume: 0, totalCommission: 0, openTrades: 0, commissionRate: 0.03 });
+      }
     };
 
     loadSummary();
@@ -66,16 +85,14 @@ export function TraderDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const totalFollowers = followers.length;
-
   const statCards = useMemo(
     () => [
-      { label: 'Open Trades', value: String(summary.openTrades) },
-      { label: 'Followers', value: String(totalFollowers) },
-      { label: 'Volume', value: `$${summary.totalVolume.toFixed(2)}` },
-      { label: '3% Fee', value: `$${summary.totalCommission.toFixed(2)}` },
+      { label: 'Open Trades', value: String(summary.openTrades), accent: '#60a5fa' },
+      { label: 'Followers', value: String(followers.length), accent: '#34d399' },
+      { label: 'Volume', value: `$${summary.totalVolume.toFixed(2)}`, accent: '#fbbf24' },
+      { label: '3% Fee', value: `$${summary.totalCommission.toFixed(2)}`, accent: '#f87171' },
     ],
-    [summary, totalFollowers]
+    [summary]
   );
 
   const handleCreateTrade = async () => {
@@ -86,77 +103,69 @@ export function TraderDashboard() {
       price: form.direction === 'CALL' ? 1.09 : 1.08,
     };
 
-    const res = await fetch('/api/trades', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const res = await fetch('/api/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    const data = await res.json();
-    if (data.trade) {
-      setTrades((current) => [data.trade, ...current]);
+      const data = await res.json();
+      if (data.trade) {
+        setTrades((current) => [data.trade, ...current]);
+      }
+    } catch {
+      // fallback handled by API if necessary
     }
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#e2e8f0', padding: 24 }}>
-      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <main className="page-shell">
+      <div className="app-frame">
+        <header className="topbar">
           <div>
-            <div style={{ fontSize: 12, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: 1.5 }}>Copy Trader</div>
-            <h1 style={{ margin: 0, fontSize: 34 }}>Forex Pulse</h1>
+            <div className="eyebrow">Copy Trader</div>
+            <h1>Forex Pulse</h1>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ border: '1px solid rgba(148,163,184,0.2)', background: '#111827', borderRadius: 999, padding: '8px 16px' }}>
-              3% commission on close
-            </div>
-            <button
-              onClick={() => setLoggedIn((current) => !current)}
-              style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 999, padding: '10px 18px', cursor: 'pointer' }}
-            >
+          <div className="header-actions">
+            <div className="badge pill-success">3% commission on close</div>
+            <button className="primary-button" onClick={() => setLoggedIn((current) => !current)}>
               {loggedIn ? 'Log out' : 'Log in'}
             </button>
           </div>
         </header>
 
         {!loggedIn ? (
-          <section style={{ maxWidth: 460, margin: '80px auto', background: '#111827', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 18, padding: 24 }}>
-            <h2 style={{ marginTop: 0 }}>Welcome to the trading desk</h2>
-            <p style={{ color: '#94a3b8', marginBottom: 24 }}>Connect your Deriv account and start trading or copy the master signal feed.</p>
-            <button
-              onClick={() => setLoggedIn(true)}
-              style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 16px', cursor: 'pointer', fontWeight: 700 }}
-            >
+          <section className="glass-card auth-card">
+            <h2>Welcome to the trading desk</h2>
+            <p>Connect your Deriv account and start trading or follow the master signal feed.</p>
+            <button className="primary-button full" onClick={() => setLoggedIn(true)}>
               Connect Deriv Account
             </button>
           </section>
         ) : (
           <>
-            <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+            <section className="stats-grid">
               {statCards.map((card) => (
-                <div key={card.label} style={{ background: '#111827', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 16, padding: 20 }}>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>{card.label}</div>
-                  <div style={{ fontSize: 26, fontWeight: 700 }}>{card.value}</div>
+                <div key={card.label} className="glass-card stat-card" style={{ borderTop: `2px solid ${card.accent}` }}>
+                  <div className="tiny-label">{card.label}</div>
+                  <div className="stat-value">{card.value}</div>
                 </div>
               ))}
             </section>
 
-            <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24 }}>
-              <div style={{ background: '#111827', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 18, padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
-                  <h3 style={{ margin: 0 }}>Master trade panel</h3>
-                  <span style={{ color: '#22c55e' }}>Live</span>
+            <section className="main-grid">
+              <div className="glass-card panel">
+                <div className="panel-header">
+                  <h3>Master trade panel</h3>
+                  <span className="live-pill">Live</span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 18 }}>
-                  <label style={{ display: 'grid', gap: 8 }}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Symbol</span>
-                    <select
-                      value={form.symbol}
-                      onChange={(event) => setForm({ ...form, symbol: event.target.value })}
-                      style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 10, padding: '10px 12px' }}
-                    >
+                <div className="trade-form-grid">
+                  <label>
+                    <span>Symbol</span>
+                    <select value={form.symbol} onChange={(event) => setForm({ ...form, symbol: event.target.value })}>
                       <option value="EURUSD">EURUSD</option>
                       <option value="USDJPY">USDJPY</option>
                       <option value="GBPUSD">GBPUSD</option>
@@ -164,48 +173,34 @@ export function TraderDashboard() {
                     </select>
                   </label>
 
-                  <label style={{ display: 'grid', gap: 8 }}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Direction</span>
-                    <select
-                      value={form.direction}
-                      onChange={(event) => setForm({ ...form, direction: event.target.value as TradeDirection })}
-                      style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 10, padding: '10px 12px' }}
-                    >
+                  <label>
+                    <span>Direction</span>
+                    <select value={form.direction} onChange={(event) => setForm({ ...form, direction: event.target.value as TradeDirection })}>
                       <option value="CALL">CALL</option>
                       <option value="PUT">PUT</option>
                     </select>
                   </label>
 
-                  <label style={{ display: 'grid', gap: 8 }}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Stake</span>
-                    <input
-                      type="number"
-                      value={form.amount}
-                      onChange={(event) => setForm({ ...form, amount: Number(event.target.value) || 0 })}
-                      style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 10, padding: '10px 12px' }}
-                    />
+                  <label>
+                    <span>Stake</span>
+                    <input type="number" value={form.amount} onChange={(event) => setForm({ ...form, amount: Number(event.target.value) || 0 })} />
                   </label>
                 </div>
 
-                <button
-                  onClick={handleCreateTrade}
-                  style={{ width: '100%', background: '#22c55e', color: '#03140b', border: 'none', borderRadius: 12, padding: '12px 16px', cursor: 'pointer', fontWeight: 700 }}
-                >
-                  Broadcast Trade to Followers
-                </button>
+                <button className="success-button full" onClick={handleCreateTrade}>Broadcast Trade to Followers</button>
 
-                <div style={{ marginTop: 24 }}>
-                  <h4 style={{ margin: '0 0 12px' }}>Recent trade feed</h4>
-                  <div style={{ display: 'grid', gap: 10 }}>
+                <div className="feed-block">
+                  <h4>Recent trade feed</h4>
+                  <div className="feed-list">
                     {trades.slice(0, 6).map((trade) => (
-                      <div key={trade.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#0f172a', borderRadius: 12, border: '1px solid rgba(148,163,184,0.2)' }}>
+                      <div key={trade.id} className="feed-item">
                         <div>
-                          <div style={{ fontWeight: 700 }}>{trade.symbol}</div>
-                          <div style={{ color: '#94a3b8', fontSize: 12 }}>{trade.direction} • {new Date(trade.createdAt).toLocaleTimeString()}</div>
+                          <div className="feed-symbol">{trade.symbol}</div>
+                          <div className="feed-meta">{trade.direction} • {new Date(trade.createdAt).toLocaleTimeString()}</div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
+                        <div className="feed-side">
                           <div>{trade.amount}</div>
-                          <div style={{ color: trade.direction === 'CALL' ? '#22c55e' : '#ef4444', fontSize: 12 }}>{trade.direction}</div>
+                          <div className={trade.direction === 'CALL' ? 'gain' : 'loss'}>{trade.direction}</div>
                         </div>
                       </div>
                     ))}
@@ -213,29 +208,29 @@ export function TraderDashboard() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gap: 20 }}>
-                <div style={{ background: '#111827', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 18, padding: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <h3 style={{ margin: 0 }}>Follower accounts</h3>
-                    <span style={{ color: '#94a3b8' }}>{followers.length} linked</span>
+              <div className="side-stack">
+                <div className="glass-card panel">
+                  <div className="panel-header compact">
+                    <h3>Follower accounts</h3>
+                    <span className="tiny-label">{followers.length} linked</span>
                   </div>
 
-                  <div style={{ display: 'grid', gap: 12 }}>
+                  <div className="follower-list">
                     {followers.map((follower) => (
-                      <div key={follower.account} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', borderRadius: 12, padding: '10px 12px', border: '1px solid rgba(148,163,184,0.2)' }}>
+                      <div key={follower.account} className="follower-item">
                         <div>
-                          <div style={{ fontWeight: 700 }}>{follower.name}</div>
-                          <div style={{ color: '#94a3b8', fontSize: 12 }}>{follower.account}</div>
+                          <div className="follower-name">{follower.name}</div>
+                          <div className="feed-meta">{follower.account}</div>
                         </div>
-                        <div style={{ color: '#22c55e', fontWeight: 700 }}>$ {follower.balance.toLocaleString()}</div>
+                        <div className="follower-balance">$ {follower.balance.toLocaleString()}</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div style={{ background: '#111827', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 18, padding: 20 }}>
-                  <h3 style={{ marginTop: 0 }}>Commission rules</h3>
-                  <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', lineHeight: 1.8 }}>
+                <div className="glass-card panel">
+                  <h3>Commission rules</h3>
+                  <ul className="rules-list">
                     <li>3% commission charged on closed positions</li>
                     <li>Applies to follower trade execution</li>
                     <li>Independent follower trades still tracked</li>
