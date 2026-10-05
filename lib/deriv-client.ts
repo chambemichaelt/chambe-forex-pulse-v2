@@ -14,8 +14,10 @@ export interface DerivAccount {
 
 export interface DerivOAuthResponse {
   access_token: string;
-  account_id: string;
-  account_type: string;
+  refresh_token?: string;
+  account_id?: string;
+  account_type?: string;
+  scope?: string;
 }
 
 export interface TradeRequest {
@@ -42,8 +44,8 @@ export interface TradeResponse {
 
 class RateLimiter {
   private requests: number[] = [];
-  private readonly maxRequests = 60; // 60 requests per minute
-  private readonly windowMs = 60 * 1000; // 1 minute
+  private readonly maxRequests = 60;
+  private readonly windowMs = 60 * 1000;
 
   canMakeRequest(): boolean {
     const now = Date.now();
@@ -66,19 +68,22 @@ class RateLimiter {
 
 class DerivClient {
   private apiUrl = 'https://api.deriv.com/api/v3';
-  private appId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+  private oauthUrl = 'https://oauth.deriv.com/oauth2/token';
+  private appId = process.env.NEXT_PUBLIC_DERIV_APP_ID ?? '34yYmvMto9OabbxhKj2Rz';
+  private redirectUri = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI ?? 'https://chambe-forex-pulse-v2.vercel.app';
   private rateLimiter = new RateLimiter();
 
-  /**
-   * Exchange OAuth code for access token
-   */
+  private getRedirectUri() {
+    return `${this.redirectUri.replace(/\/$/, '')}/api/deriv/callback`;
+  }
+
   async exchangeCodeForToken(code: string): Promise<DerivOAuthResponse> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/oauth/token`, {
+      const response = await fetch(this.oauthUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,30 +92,28 @@ class DerivClient {
           grant_type: 'authorization_code',
           code,
           app_id: this.appId,
+          redirect_uri: this.getRedirectUri(),
         }),
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`OAuth error: ${error.error_description || error.error}`);
+        throw new Error(data.error_description || data.error || 'Failed to exchange auth code');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       throw new Error(`Failed to exchange code for token: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Refresh OAuth token
-   */
   async refreshToken(refreshToken: string): Promise<DerivOAuthResponse> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/oauth/token`, {
+      const response = await fetch(this.oauthUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,22 +122,21 @@ class DerivClient {
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
           app_id: this.appId,
+          redirect_uri: this.getRedirectUri(),
         }),
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error('Failed to refresh token');
+        throw new Error(data.error_description || data.error || 'Failed to refresh token');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       throw new Error(`Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Fetch real account data from Deriv
-   */
   async getAccountInfo(accessToken: string): Promise<DerivAccount> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
@@ -145,6 +147,7 @@ class DerivClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           authorize: 1,
@@ -152,31 +155,28 @@ class DerivClient {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch account info');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to fetch account info');
       }
 
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(`Account info error: ${data.error.message}`);
+      const account = data.authorize;
+      if (!account) {
+        throw new Error('No account details returned by Deriv');
       }
 
       return {
-        id: data.authorize.account_id,
-        email: data.authorize.email,
-        balance: data.authorize.balance,
-        currency: data.authorize.currency,
-        loginId: data.authorize.loginid,
+        id: String(account.account_id || account.loginid || 'unknown'),
+        email: String(account.email || 'unknown@deriv.com'),
+        balance: Number(account.balance || 0),
+        currency: String(account.currency || 'USD'),
+        loginId: String(account.loginid || 'unknown'),
       };
     } catch (error) {
       throw new Error(`Failed to get account info: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Execute a trade on broadcaster's account
-   */
   async executeTrade(accessToken: string, trade: TradeRequest): Promise<TradeResponse> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
@@ -191,20 +191,14 @@ class DerivClient {
         },
         body: JSON.stringify({
           buy: 1,
-          price: 100, // 100 is minimum
           ...trade,
           req_id: Date.now(),
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to execute trade');
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(`Trade execution error: ${data.error.message}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Trade execution failed');
       }
 
       return data;
@@ -213,9 +207,6 @@ class DerivClient {
     }
   }
 
-  /**
-   * Close an open contract
-   */
   async closeContract(accessToken: string, contractId: number): Promise<{ sell: Record<string, unknown> }> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
@@ -230,19 +221,13 @@ class DerivClient {
         },
         body: JSON.stringify({
           sell: contractId,
-          price: 0, // 0 = market price
           req_id: Date.now(),
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to close contract');
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(`Close contract error: ${data.error.message}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to close contract');
       }
 
       return data;
@@ -251,9 +236,6 @@ class DerivClient {
     }
   }
 
-  /**
-   * Get contract details
-   */
   async getContractDetails(accessToken: string, contractId: number): Promise<Record<string, unknown>> {
     if (!this.rateLimiter.canMakeRequest()) {
       throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
@@ -272,22 +254,16 @@ class DerivClient {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to get contract details');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to get contract details');
       }
 
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(`Contract details error: ${data.error.message}`);
-      }
-
-      return data.contract_details;
+      return data.contract_details || {};
     } catch (error) {
       throw new Error(`Failed to get contract details: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }
 
-// Export singleton instance
 export const derivClient = new DerivClient();
