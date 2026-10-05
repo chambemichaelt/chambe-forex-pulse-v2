@@ -1,18 +1,17 @@
+/**
+ * Deriv OAuth initiation
+ * Redirects user to Deriv OAuth authorization endpoint
+ */
+
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { buildDerivAuthUrl } from '@/lib/deriv';
 
 export async function GET() {
-  const state = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const redirectUrl = buildDerivAuthUrl();
+  const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || '34yYmvMto9OabbxhKj2Rz';
+  const redirectUri = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI || 'https://chambe-forex-pulse-v2.vercel.app';
 
-  cookies().set('deriv_oauth_state', state, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 10,
-  });
+  const oauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${appId}&redirect_uri=${encodeURIComponent(
+    `${redirectUri}/api/deriv/callback`
+  )}&scope=read,trade&state=${Date.now()}`;
 
-  return NextResponse.redirect(redirectUrl);
+  return NextResponse.redirect(oauthUrl);
 }
