@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { tradeStore } from '@/lib/mock-store';
+import { tradeStore, type TradeRecord } from '@/lib/mock-store';
 
 export async function GET() {
   return NextResponse.json({ ok: true, timestamp: new Date().toISOString(), trades: tradeStore });
@@ -8,7 +8,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const body = await req.json();
 
-  const trade = {
+  const trade: TradeRecord = {
     id: `trade_${Date.now()}`,
     symbol: body.symbol ?? 'EURUSD',
     direction: body.direction ?? 'CALL',
