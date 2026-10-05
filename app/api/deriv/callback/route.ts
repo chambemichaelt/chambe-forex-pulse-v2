@@ -1,78 +1,55 @@
 import { NextResponse } from 'next/server';
-import { decryptToken, getActiveFollowerAccounts, saveTrade, addCommission } from '@/lib/db';
+import { cookies } from 'next/headers';
+import { createSession } from '@/lib/session';
 import { derivClient } from '@/lib/deriv-client';
-import { calculateCommission } from '@/lib/commission';
 
-export async function POST(req: Request) {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const authCode = searchParams.get('code');
+  const error = searchParams.get('error');
+
+  const redirectBase = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI ?? 'https://chambe-forex-pulse-v2.vercel.app';
+
+  if (error) {
+    return NextResponse.redirect(`${redirectBase}?error=${encodeURIComponent(error)}`);
+  }
+
+  if (!authCode) {
+    return NextResponse.json({ error: 'No authorization code received' }, { status: 400 });
+  }
+
   try {
-    const body = await req.json();
-    const symbol = body.symbol ?? 'EURUSD';
-    const direction = body.direction ?? 'CALL';
-    const amount = Number(body.amount ?? 100);
-    const price = Number(body.price ?? 1.09);
+    const tokenResponse = await derivClient.exchangeCodeForToken(authCode);
+    const accessToken = tokenResponse.access_token;
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 400 });
+    if (!accessToken) {
+      throw new Error('No access token returned from Deriv');
     }
 
-    const followers = getActiveFollowerAccounts();
-    const results: Array<{ followerId: string; success: boolean; contractId?: number; error?: string }> = [];
+    const user = await derivClient.getAccountInfo(accessToken);
+    const sessionId = createSession({
+      id: user.id,
+      email: user.email,
+      balance: user.balance,
+      currency: user.currency,
+      accountId: user.id,
+      token: accessToken,
+      loginId: user.loginId,
+      refreshToken: tokenResponse.refresh_token,
+    });
 
-    for (const follower of followers) {
-      try {
-        const token = decryptToken(follower.accessToken);
-        const response = await derivClient.executeTrade(token, {
-          symbol,
-          contract_type: direction,
-          amount,
-          duration: 60,
-          duration_unit: 'm',
-          currency: 'USD',
-        });
+    const response = NextResponse.redirect(redirectBase);
+    response.cookies.set('session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60,
+      path: '/',
+    });
 
-        const commission = calculateCommission(amount);
-        const tradeRecord = saveTrade({
-          id: `trade_${Date.now()}_${follower.id}`,
-          symbol,
-          direction,
-          amount,
-          price,
-          commission,
-          status: 'open',
-          createdAt: new Date().toISOString(),
-          broadcaster: 'You',
-          followerCount: followers.length,
-          contractId: response.buy.contract_id,
-          followerId: follower.id,
-        });
-
-        addCommission({
-          tradeId: tradeRecord.id,
-          followerId: follower.id,
-          amount: commission,
-          rate: 0.03,
-        });
-
-        results.push({
-          followerId: follower.id,
-          success: true,
-          contractId: response.buy.contract_id,
-        });
-      } catch (error) {
-        results.push({
-          followerId: follower.id,
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to sync follower trade',
-        });
-      }
-    }
-
-    return NextResponse.json({ ok: true, results, followerCount: followers.length });
-  } catch (error) {
-    console.error('Follower sync route failed:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to sync followers' },
-      { status: 500 }
-    );
+    return response;
+  } catch (err) {
+    console.error('Deriv OAuth callback failed:', err);
+    return NextResponse.redirect(`${redirectBase}?error=oauth_failed`);
   }
 }
