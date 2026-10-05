@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { decryptToken, getActiveFollowerAccounts, saveTrade, addCommission } from '@/lib/db';
 import { derivClient } from '@/lib/deriv-client';
+import { decryptToken, getActiveFollowerAccounts, saveTrade, addCommission } from '@/lib/db';
 import { calculateCommission } from '@/lib/commission';
 
 export async function POST(req: Request) {
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     }
 
     const followers = getActiveFollowerAccounts();
-    const results: Array<{ followerId: string; success: boolean; contractId?: number; error?: string }> = [];
+    const executionResults: Array<{ followerId: string; status: 'success' | 'failed'; contractId?: number; error?: string }> = [];
 
     for (const follower of followers) {
       try {
@@ -28,6 +28,12 @@ export async function POST(req: Request) {
           duration: 60,
           duration_unit: 'm',
           currency: 'USD',
+        });
+
+        executionResults.push({
+          followerId: follower.id,
+          status: 'success',
+          contractId: response.buy.contract_id,
         });
 
         const commission = calculateCommission(amount);
@@ -52,26 +58,20 @@ export async function POST(req: Request) {
           amount: commission,
           rate: 0.03,
         });
-
-        results.push({
-          followerId: follower.id,
-          success: true,
-          contractId: response.buy.contract_id,
-        });
       } catch (error) {
-        results.push({
+        executionResults.push({
           followerId: follower.id,
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to sync follower trade',
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Execution failed',
         });
       }
     }
 
-    return NextResponse.json({ ok: true, results, followerCount: followers.length });
+    return NextResponse.json({ ok: true, results: executionResults, followerCount: followers.length });
   } catch (error) {
-    console.error('Follower sync route failed:', error);
+    console.error('Follower sync failed:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to sync followers' },
+      { error: error instanceof Error ? error.message : 'Follower sync failed' },
       { status: 500 }
     );
   }
