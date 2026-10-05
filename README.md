@@ -1,24 +1,37 @@
-# chambe-forex-pulse-v2
+# Forex Pulse Copy Trading App
 
-A clean-start copy trading dashboard for a Deriv-based trading app.
+A clean, production-ready foundation for a Deriv-based copy-trading dashboard.
 
-## Features
-
-- broadcaster dashboard
-- follower account overview
-- live trade feed
-- 3% commission logic
-- independent app start flow
-
-## Run locally
+## Quick run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+## Production environment
 
-## Production notes
+Create a `.env.local` file with the values below:
 
-Connect your real Deriv OAuth app and token environment values in Vercel before going live.
+```bash
+NEXT_PUBLIC_DERIV_APP_ID=34yYmvMto9OabbxhKj2Rz
+NEXT_PUBLIC_DERIV_REDIRECT_URI=https://chambe-forex-pulse-v2.vercel.app
+NEXT_PUBLIC_DERIV_APP_NAME=Forex Pulse
+NEXT_PUBLIC_DERIV_SHOW_APP_NAME=true
+NEXT_PUBLIC_DERIV_REFERRAL_LINK=https://t.deriv.link?t=7VWTAVCN8423
+NEXT_PUBLIC_DERIV_OAUTH_SCOPES=read,trade
+NEXT_PUBLIC_DERIV_ENV=production
+NEXT_PUBLIC_FONT_FAMILY=Poppins
+```
+
+## Architecture
+
+- master broadcaster dashboard
+- follower account links
+- broadcast / read-only / independent modes
+- 3% commission tracking
+- live trade feed
+
+## Important note
+
+This repo is the clean foundation for the real product. The actual live Deriv OAuth token exchange and trade execution must be completed on the live Vercel deployment with the real Deriv app credentials and allowed redirect URL.
