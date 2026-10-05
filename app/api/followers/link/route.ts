@@ -1,56 +1,46 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createSession } from '@/lib/session';
-import { derivClient } from '@/lib/deriv-client';
+import { saveFollowerAccount, getFollowerAccountByEmail } from '@/lib/db';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const authCode = searchParams.get('code');
-  const error = searchParams.get('error');
-
-  const redirectBase = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI ?? 'https://chambe-forex-pulse-v2.vercel.app';
-
-  if (error) {
-    return NextResponse.redirect(`${redirectBase}?error=${encodeURIComponent(error)}`);
-  }
-
-  if (!authCode) {
-    return NextResponse.json({ error: 'No authorization code received' }, { status: 400 });
-  }
-
+export async function POST(req: Request) {
   try {
-    const tokenResponse = await derivClient.exchangeCodeForToken(authCode);
-    const accessToken = tokenResponse.access_token;
+    const payload = await req.json();
+    const email = payload.email?.toString();
+    const loginId = payload.loginId?.toString();
+    const accountId = payload.accountId?.toString();
+    const accessToken = payload.accessToken?.toString();
+    const refreshToken = payload.refreshToken?.toString();
+    const scopes = Array.isArray(payload.scopes)
+      ? payload.scopes.map((scope: unknown) => String(scope))
+      : ['read'];
 
-    if (!accessToken) {
-      throw new Error('No access token returned from Deriv');
+    if (!email || !accessToken || !accountId) {
+      return NextResponse.json(
+        { error: 'email, accountId, and accessToken are required' },
+        { status: 400 }
+      );
     }
 
-    const account = await derivClient.getAccountInfo(accessToken);
+    const existing = getFollowerAccountByEmail(email);
+    const followerId = existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-    const sessionId = createSession({
-      id: account.id,
-      email: account.email,
-      balance: account.balance,
-      currency: account.currency,
-      accountId: account.id,
-      token: accessToken,
-      loginId: account.loginId,
-      refreshToken: tokenResponse.refresh_token,
+    const follower = saveFollowerAccount({
+      id: followerId,
+      userId: followerId,
+      email,
+      loginId: loginId ?? `login_${Date.now()}`,
+      accountId,
+      accessToken,
+      refreshToken,
+      scopes,
+      status: 'active',
     });
 
-    const response = NextResponse.redirect(redirectBase);
-    response.cookies.set('session_id', sessionId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60,
-      path: '/',
-    });
-
-    return response;
-  } catch (err) {
-    console.error('Deriv OAuth callback failed:', err);
-    return NextResponse.redirect(`${redirectBase}?error=oauth_failed`);
+    return NextResponse.json({ ok: true, follower });
+  } catch (error) {
+    console.error('Link follower failed:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to link follower' },
+      { status: 500 }
+    );
   }
 }

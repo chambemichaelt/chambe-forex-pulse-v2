@@ -26,19 +26,20 @@ export async function GET(request: Request) {
       throw new Error('No access token returned from Deriv');
     }
 
-    const user = await derivClient.getAccountInfo(accessToken);
+    const account = await derivClient.getAccountInfo(accessToken);
+
     const sessionId = createSession({
-      id: user.id,
-      email: user.email,
-      balance: user.balance,
-      currency: user.currency,
-      accountId: user.id,
+      id: account.id,
+      email: account.email,
+      balance: account.balance,
+      currency: account.currency,
+      accountId: account.id,
       token: accessToken,
-      loginId: user.loginId,
-      refreshToken: tokenResponse.refresh_token,
+      loginId: account.loginId,
     });
 
     const response = NextResponse.redirect(redirectBase);
+    const cookieStore = await cookies();
     response.cookies.set('session_id', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

@@ -1,63 +1,28 @@
 import { NextResponse } from 'next/server';
-import { updateFollowerStatus, deleteFollowerAccount } from '@/lib/db';
+import { getCommissions, getTrades } from '@/lib/db';
+import { summarizeCommissions } from '@/lib/commission';
 
-export async function PATCH(req: Request) {
+export async function GET() {
   try {
-    const body = await req.json();
-    const followerId = body.followerId?.toString();
-    const status = body.status?.toString();
+    const commissions = getCommissions();
+    const trades = getTrades();
 
-    if (!followerId || !status) {
-      return NextResponse.json(
-        { error: 'followerId and status are required' },
-        { status: 400 }
-      );
-    }
+    const totalVolume = trades.reduce((sum, trade) => sum + trade.amount, 0);
+    const totalCommission = commissions.reduce((sum, comm) => sum + comm.amount, 0);
+    const tradeCount = trades.length;
 
-    if (!['active', 'paused', 'inactive'].includes(status)) {
-      return NextResponse.json(
-        { error: 'status must be active, paused, or inactive' },
-        { status: 400 }
-      );
-    }
+    const summary = summarizeCommissions(totalVolume, totalCommission, tradeCount);
 
-    const updated = updateFollowerStatus(followerId, status as 'active' | 'paused' | 'inactive');
-    if (!updated) {
-      return NextResponse.json({ error: 'Follower not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ ok: true, follower: updated });
+    return NextResponse.json({
+      ok: true,
+      summary,
+      commissions,
+      trades,
+    });
   } catch (error) {
-    console.error('Failed to update follower status:', error);
+    console.error('Failed to get commission summary:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update follower' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    const body = await req.json();
-    const followerId = body.followerId?.toString();
-
-    if (!followerId) {
-      return NextResponse.json(
-        { error: 'followerId is required' },
-        { status: 400 }
-      );
-    }
-
-    const deleted = deleteFollowerAccount(followerId);
-    if (!deleted) {
-      return NextResponse.json({ error: 'Follower not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ ok: true, message: 'Follower account deleted' });
-  } catch (error) {
-    console.error('Failed to delete follower:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to delete follower' },
+      { error: error instanceof Error ? error.message : 'Failed to get commission summary' },
       { status: 500 }
     );
   }
