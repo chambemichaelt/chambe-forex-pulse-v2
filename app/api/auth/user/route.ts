@@ -1,39 +1,20 @@
 /**
- * Get current user info from session
+ * Deriv OAuth initiation
+ * Redirects user to Deriv OAuth authorization endpoint
  */
 
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { getSession } from '@/lib/session';
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const sessionId = cookieStore.get('session_id')?.value;
+  const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || '34yYmvMto9OabbxhKj2Rz';
+  const redirectUri = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI || 'https://chambe-forex-pulse-v2.vercel.app';
 
-  if (!sessionId) {
-    return NextResponse.json(
-      { error: 'Not authenticated' },
-      { status: 401 }
-    );
-  }
+  const oauthUrl = new URL('https://oauth.deriv.com/oauth2/authorize');
+  oauthUrl.searchParams.set('app_id', appId);
+  oauthUrl.searchParams.set('redirect_uri', `${redirectUri.replace(/\/$/, '')}/api/deriv/callback`);
+  oauthUrl.searchParams.set('brand', 'deriv');
+  oauthUrl.searchParams.set('scope', 'read,trade');
+  oauthUrl.searchParams.set('state', String(Date.now()));
 
-  const session = getSession(sessionId);
-
-  if (!session || !session.user) {
-    return NextResponse.json(
-      { error: 'Session expired' },
-      { status: 401 }
-    );
-  }
-
-  return NextResponse.json({
-    user: {
-      id: session.user.id,
-      email: session.user.email,
-      balance: session.user.balance,
-      currency: session.user.currency,
-      accountId: session.user.accountId,
-      loginId: session.user.loginId,
-    },
-  });
+  return NextResponse.redirect(oauthUrl.toString());
 }

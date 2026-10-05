@@ -1,217 +1,265 @@
 /**
- * Shared in-memory persistence layer for followers, trades, and commissions.
- * This keeps the app working without an external database while staying organized
- * for a future move to PostgreSQL / Redis.
+ * Real Deriv API Client
+ * Handles OAuth token exchange, account data fetching, and trade execution
+ * Production-ready with error handling, rate limiting, and token refresh
  */
 
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
-
-export type FollowerStatus = 'active' | 'paused' | 'inactive';
-export type TradeDirection = 'CALL' | 'PUT';
-
-export interface FollowerAccount {
+export interface DerivAccount {
   id: string;
-  userId: string;
   email: string;
+  balance: number;
+  currency: string;
   loginId: string;
-  accountId: string;
-  accessToken: string;
-  refreshToken?: string;
-  scopes: string[];
-  status: FollowerStatus;
-  createdAt: string;
-  updatedAt: string;
 }
 
-export interface TradeRecord {
-  id: string;
+export interface DerivOAuthResponse {
+  access_token: string;
+  refresh_token?: string;
+  account_id?: string;
+  account_type?: string;
+  scope?: string;
+}
+
+export interface TradeRequest {
+  amount: number;
+  barrier1?: string;
+  basis?: string;
+  contract_type: 'CALL' | 'PUT';
+  currency?: string;
+  duration: number;
+  duration_unit: 'h' | 'm' | 's';
   symbol: string;
-  direction: TradeDirection;
-  amount: number;
-  price: number;
-  commission: number;
-  status: 'open' | 'closed';
-  createdAt: string;
-  broadcaster: string;
-  followerCount: number;
-  contractId?: number;
-  followerId?: string;
 }
 
-export interface CommissionRecord {
-  id: string;
-  tradeId: string;
-  followerId: string;
-  amount: number;
-  rate: number;
-  createdAt: string;
+export interface TradeResponse {
+  buy: {
+    contract_id: number;
+    payout: number;
+    start_time: number;
+  };
+  echo_req: Record<string, unknown>;
+  msg_type: string;
+  req_id: number;
 }
 
-const followers = new Map<string, FollowerAccount>();
-const trades = new Map<string, TradeRecord>();
-const commissions = new Map<string, CommissionRecord>();
+class RateLimiter {
+  private requests: number[] = [];
+  private readonly maxRequests = 60;
+  private readonly windowMs = 60 * 1000;
 
-const TOKEN_SECRET = process.env.DERIV_TOKEN_SECRET ?? 'forex-pulse-dev-secret';
-const IV_LENGTH = 16;
+  canMakeRequest(): boolean {
+    const now = Date.now();
+    this.requests = this.requests.filter((time) => now - time < this.windowMs);
 
-function deriveKey(): Buffer {
-  return createHash('sha256').update(TOKEN_SECRET).digest();
-}
+    if (this.requests.length < this.maxRequests) {
+      this.requests.push(now);
+      return true;
+    }
 
-export function encryptToken(value: string): string {
-  const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv('aes-256-cbc', deriveKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-  return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-export function decryptToken(encrypted: string): string {
-  const [ivHex, encryptedHex] = encrypted.split(':');
-  if (!ivHex || !encryptedHex) {
-    return encrypted;
+    return false;
   }
 
-  const iv = Buffer.from(ivHex, 'hex');
-  const decipher = createDecipheriv('aes-256-cbc', deriveKey(), iv);
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(encryptedHex, 'hex')),
-    decipher.final(),
-  ]);
-
-  return decrypted.toString('utf8');
+  getRemainingWaitTime(): number {
+    if (this.requests.length === 0) return 0;
+    const oldestRequest = this.requests[0];
+    return Math.max(0, this.windowMs - (Date.now() - oldestRequest));
+  }
 }
 
-export function saveFollowerAccount(input: Omit<FollowerAccount, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }): FollowerAccount {
-  const now = new Date().toISOString();
-  const account: FollowerAccount = {
-    ...input,
-    accessToken: encryptToken(input.accessToken),
-    refreshToken: input.refreshToken ? encryptToken(input.refreshToken) : undefined,
-    createdAt: input.createdAt ?? now,
-    updatedAt: input.updatedAt ?? now,
-  };
+class DerivClient {
+  private apiUrl = 'https://api.deriv.com/api/v3';
+  private oauthUrl = 'https://oauth.deriv.com/oauth2/token';
+  private appId = process.env.NEXT_PUBLIC_DERIV_APP_ID ?? '34yYmvMto9OabbxhKj2Rz';
+  private redirectUri = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI ?? 'https://chambe-forex-pulse-v2.vercel.app';
+  private rateLimiter = new RateLimiter();
 
-  followers.set(account.id, account);
-  return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
-  };
+  private getRedirectUri() {
+    return `${this.redirectUri.replace(/\/$/, '')}/api/deriv/callback`;
+  }
+
+  async exchangeCodeForToken(code: string): Promise<DerivOAuthResponse> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(this.oauthUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code,
+          app_id: this.appId,
+          redirect_uri: this.getRedirectUri(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error_description || data.error || 'Failed to exchange auth code');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to exchange code for token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async refreshToken(refreshToken: string): Promise<DerivOAuthResponse> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(this.oauthUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          app_id: this.appId,
+          redirect_uri: this.getRedirectUri(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error_description || data.error || 'Failed to refresh token');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getAccountInfo(accessToken: string): Promise<DerivAccount> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/authorize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          authorize: 1,
+          req_id: Date.now(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to fetch account info');
+      }
+
+      const account = data.authorize;
+      if (!account) {
+        throw new Error('No account details returned by Deriv');
+      }
+
+      return {
+        id: String(account.account_id || account.loginid || 'unknown'),
+        email: String(account.email || 'unknown@deriv.com'),
+        balance: Number(account.balance || 0),
+        currency: String(account.currency || 'USD'),
+        loginId: String(account.loginid || 'unknown'),
+      };
+    } catch (error) {
+      throw new Error(`Failed to get account info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async executeTrade(accessToken: string, trade: TradeRequest): Promise<TradeResponse> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/buy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          buy: 1,
+          ...trade,
+          req_id: Date.now(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Trade execution failed');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Trade execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async closeContract(accessToken: string, contractId: number): Promise<{ sell: Record<string, unknown> }> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/sell`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          sell: contractId,
+          req_id: Date.now(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to close contract');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to close contract: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getContractDetails(accessToken: string, contractId: number): Promise<Record<string, unknown>> {
+    if (!this.rateLimiter.canMakeRequest()) {
+      throw new Error(`Rate limit exceeded. Wait ${this.rateLimiter.getRemainingWaitTime()}ms`);
+    }
+
+    try {
+      const response = await fetch(`${this.apiUrl}/contract_details`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          contract_details: contractId,
+          req_id: Date.now(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || 'Failed to get contract details');
+      }
+
+      return data.contract_details || {};
+    } catch (error) {
+      throw new Error(`Failed to get contract details: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 }
 
-export function getFollowerAccount(id: string): FollowerAccount | null {
-  const account = followers.get(id);
-  if (!account) return null;
-
-  return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
-  };
-}
-
-export function getFollowerAccounts(): FollowerAccount[] {
-  return Array.from(followers.values()).map((account) => ({
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
-  }));
-}
-
-export function getActiveFollowerAccounts(): FollowerAccount[] {
-  return getFollowerAccounts().filter((account) => account.status === 'active');
-}
-
-export function saveTrade(trade: TradeRecord): TradeRecord {
-  trades.set(trade.id, trade);
-  return trade;
-}
-
-export function getTrades(): TradeRecord[] {
-  return Array.from(trades.values());
-}
-
-export function addCommission(record: Omit<CommissionRecord, 'id' | 'createdAt'>): CommissionRecord {
-  const commission: CommissionRecord = {
-    ...record,
-    id: `commission_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-    createdAt: new Date().toISOString(),
-  };
-
-  commissions.set(commission.id, commission);
-  return commission;
-}
-
-export function getCommissions(): CommissionRecord[] {
-  return Array.from(commissions.values());
-}
-
-export function resetDb(): void {
-  followers.clear();
-  trades.clear();
-  commissions.clear();
-}
-
-export function seedDemoData(): void {
-  const demoTrades: TradeRecord[] = [
-    {
-      id: 'trade_1001',
-      symbol: 'EURUSD',
-      direction: 'CALL',
-      amount: 100,
-      price: 1.0896,
-      commission: 3,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-      broadcaster: 'You',
-      followerCount: 4,
-    },
-    {
-      id: 'trade_1002',
-      symbol: 'USDJPY',
-      direction: 'PUT',
-      amount: 120,
-      price: 156.24,
-      commission: 3.6,
-      status: 'open',
-      createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-      broadcaster: 'You',
-      followerCount: 4,
-    },
-  ];
-
-  demoTrades.forEach((trade) => saveTrade(trade));
-}
-
-export function getFollowerAccountByEmail(email: string): FollowerAccount | null {
-  const account = Array.from(followers.values()).find((item) => item.email.toLowerCase() === email.toLowerCase());
-  if (!account) return null;
-
-  return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
-  };
-}
-
-export function updateFollowerStatus(id: string, status: FollowerStatus): FollowerAccount | null {
-  const account = followers.get(id);
-  if (!account) return null;
-
-  const updated = {
-    ...account,
-    status,
-    updatedAt: new Date().toISOString(),
-  };
-
-  followers.set(id, updated);
-  return {
-    ...updated,
-    accessToken: decryptToken(updated.accessToken),
-    refreshToken: updated.refreshToken ? decryptToken(updated.refreshToken) : undefined,
-  };
-}
-
-export function deleteFollowerAccount(id: string): boolean {
-  return followers.delete(id);
-}
+export const derivClient = new DerivClient();
