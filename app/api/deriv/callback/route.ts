@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSession } from '@/lib/session';
 import { getDerivAccountInfo } from '@/lib/deriv/account';
+import { registerFollowerAccount } from '@/lib/db';
 
 const CLIENT_ID =
   process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkj2Rz';
@@ -101,7 +102,40 @@ export async function GET(request: Request) {
      */
     const account = await getDerivAccountInfo(accessToken);
 
+    /*
+     * Determine the Forex Pulse platform role.
+     *
+     * The Owner account is configured through the server-side
+     * OWNER_DERIV_ACCOUNT_ID environment variable. All other
+     * newly connected accounts start as followers.
+     */
+    const ownerAccountId =
+      process.env.OWNER_DERIV_ACCOUNT_ID?.trim();
+
+    const role =
+      ownerAccountId &&
+      account.accountId === ownerAccountId
+        ? 'owner'
+        : 'follower';
+
+    /*
+     * Register this Deriv account inside Forex Pulse.
+     * The access token is encrypted before storage and is never
+     * returned to the browser.
+     */
+    registerFollowerAccount({
+      userId: account.accountId,
+      email: account.email,
+      loginId: account.loginId,
+      accountId: account.accountId,
+      accessToken,
+      refreshToken: tokenData.refresh_token,
+      scopes: ['trade', 'application_read'],
+      role,
+    });
+
     const sessionId = createSession({
+      role,
       id: account.accountId,
       email: account.email,
       balance: account.balance,

@@ -7,9 +7,11 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 
 export type FollowerStatus = 'active' | 'paused' | 'inactive';
+export type ForexPulseAccountRole = 'owner' | 'broadcaster' | 'follower';
 export type TradeDirection = 'CALL' | 'PUT';
 
 export interface FollowerAccount {
+  role: ForexPulseAccountRole;
   id: string;
   userId: string;
   email: string;
@@ -104,6 +106,68 @@ export function saveFollowerAccount(
   };
 }
 
+export function registerFollowerAccount(input: {
+  userId: string;
+  email: string;
+  loginId: string;
+  accountId: string;
+  accessToken: string;
+  refreshToken?: string;
+  scopes: string[];
+  role?: ForexPulseAccountRole;
+}): FollowerAccount {
+  const existing = getFollowerAccountByAccountId(input.accountId);
+  const now = new Date().toISOString();
+
+  const account: FollowerAccount = {
+    role: existing?.role ?? input.role ?? 'follower',
+    id: existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    userId: input.userId,
+    email: input.email,
+    loginId: input.loginId,
+    accountId: input.accountId,
+    accessToken: encryptToken(input.accessToken),
+    refreshToken: input.refreshToken
+      ? encryptToken(input.refreshToken)
+      : undefined,
+    scopes: input.scopes,
+    status: 'active',
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  followers.set(account.id, account);
+
+  return {
+    ...account,
+    accessToken: '[stored securely]',
+    refreshToken: account.refreshToken ? '[stored securely]' : undefined,
+  };
+}
+
+export function updateFollowerRole(
+  id: string,
+  role: ForexPulseAccountRole
+): FollowerAccount | null {
+  const account = followers.get(id);
+
+  if (!account) return null;
+
+  const updated = {
+    ...account,
+    role,
+    updatedAt: new Date().toISOString(),
+  };
+
+  followers.set(id, updated);
+
+  return {
+    ...updated,
+    accessToken: '[stored securely]',
+    refreshToken: updated.refreshToken ? '[stored securely]' : undefined,
+  };
+}
+
 export function getFollowerAccount(id: string): FollowerAccount | null {
   const account = followers.get(id);
   if (!account) return null;
@@ -125,6 +189,38 @@ export function getFollowerAccounts(): FollowerAccount[] {
 
 export function getActiveFollowerAccounts(): FollowerAccount[] {
   return getFollowerAccounts().filter((account) => account.status === 'active');
+}
+
+export function getFollowerAccountByAccountId(accountId: string): FollowerAccount | null {
+  const account = Array.from(followers.values()).find(
+    (item) => item.accountId === accountId
+  );
+
+  if (!account) return null;
+
+  return {
+    ...account,
+    accessToken: decryptToken(account.accessToken),
+    refreshToken: account.refreshToken
+      ? decryptToken(account.refreshToken)
+      : undefined,
+  };
+}
+
+export function getFollowerAccountByUserId(userId: string): FollowerAccount | null {
+  const account = Array.from(followers.values()).find(
+    (item) => item.userId === userId
+  );
+
+  if (!account) return null;
+
+  return {
+    ...account,
+    accessToken: decryptToken(account.accessToken),
+    refreshToken: account.refreshToken
+      ? decryptToken(account.refreshToken)
+      : undefined,
+  };
 }
 
 export function getFollowerAccountByEmail(email: string): FollowerAccount | null {

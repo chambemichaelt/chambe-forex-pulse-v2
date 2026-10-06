@@ -26,12 +26,17 @@ type Summary = {
   commissionRate: number;
 };
 
-const followers = [
-  { name: 'Ava', account: 'CR123', balance: 12000 },
-  { name: 'Leo', account: 'CR456', balance: 9000 },
-  { name: 'Mina', account: 'CR789', balance: 15000 },
-  { name: 'Ike', account: 'CR901', balance: 11000 },
-];
+type ForexPulseRole = 'owner' | 'broadcaster' | 'follower';
+
+type CurrentUser = {
+  id: string;
+  role: ForexPulseRole;
+  email: string;
+  balance: number;
+  currency: string;
+  accountId: string;
+  loginId: string;
+};
 
 const defaultForm = {
   symbol: 'EURUSD',
@@ -43,7 +48,8 @@ export type { ConnectionMode };
 
 export function TradeDashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [mode, setMode] = useState<ConnectionMode>('broadcast');
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [mode, setMode] = useState<ConnectionMode>('independent');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [summary, setSummary] = useState<Summary>({
     totalVolume: 0,
@@ -55,14 +61,21 @@ export function TradeDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is authenticated
+    // Check authentication and load the Forex Pulse role.
     const checkAuth = async () => {
       try {
         const res = await fetch('/api/auth/user');
+
         if (res.ok) {
-          setLoggedIn(true);
+          const data = await res.json();
+          setCurrentUser(data.user ?? null);
+          setLoggedIn(Boolean(data.user));
+        } else {
+          setCurrentUser(null);
+          setLoggedIn(false);
         }
       } catch {
+        setCurrentUser(null);
         setLoggedIn(false);
       } finally {
         setLoading(false);
@@ -113,10 +126,21 @@ export function TradeDashboard() {
     return () => clearInterval(interval);
   }, [loggedIn]);
 
+  const canBroadcast =
+    currentUser?.role === 'owner' ||
+    currentUser?.role === 'broadcaster';
+
+  const roleLabel =
+    currentUser?.role === 'owner'
+      ? 'Owner / Admin'
+      : currentUser?.role === 'broadcaster'
+        ? 'Broadcaster'
+        : 'Follower';
+
   const statCards = useMemo(
     () => [
       { label: 'Open Trades', value: String(summary.openTrades), accent: '#60a5fa' },
-      { label: 'Followers', value: String(followers.length), accent: '#34d399' },
+      { label: 'Role', value: roleLabel, accent: '#34d399' },
       { label: 'Volume', value: `$${summary.totalVolume.toFixed(2)}`, accent: '#fbbf24' },
       { label: '3% Fee', value: `$${summary.totalCommission.toFixed(2)}`, accent: '#f87171' },
     ],
@@ -124,6 +148,8 @@ export function TradeDashboard() {
   );
 
   const handleCreateTrade = async () => {
+    if (!canBroadcast) return;
+
     const payload = {
       symbol: form.symbol,
       direction: form.direction,
@@ -199,15 +225,27 @@ export function TradeDashboard() {
             </section>
 
             <section className="mode-row glass-card">
-              <div className="mode-label">Connection mode</div>
+              <div>
+                <div className="mode-label">Forex Pulse role</div>
+                <div className="feed-meta">{roleLabel}</div>
+              </div>
+
               <div className="mode-switches">
-                {(['broadcast', 'read-only', 'independent'] as ConnectionMode[]).map((item) => (
+                {(
+                  canBroadcast
+                    ? (['broadcast', 'read-only', 'independent'] as ConnectionMode[])
+                    : (['read-only', 'independent'] as ConnectionMode[])
+                ).map((item) => (
                   <button
                     key={item}
                     className={mode === item ? 'mode-button active' : 'mode-button'}
                     onClick={() => setMode(item)}
                   >
-                    {item === 'broadcast' ? 'Broadcast' : item === 'read-only' ? 'Read only' : 'Independent'}
+                    {item === 'broadcast'
+                      ? 'Broadcast'
+                      : item === 'read-only'
+                        ? 'Read only'
+                        : 'Independent'}
                   </button>
                 ))}
               </div>
@@ -216,7 +254,7 @@ export function TradeDashboard() {
             <section className="main-grid">
               <div className="glass-card panel">
                 <div className="panel-header">
-                  <h3>Master trade panel</h3>
+                  <h3>{canBroadcast ? 'Broadcast command centre' : 'Follower trading panel'}</h3>
                   <span className="live-pill">Live</span>
                 </div>
 
@@ -245,9 +283,15 @@ export function TradeDashboard() {
                   </label>
                 </div>
 
-                <button className="success-button full" onClick={handleCreateTrade}>
-                  Broadcast Trade to Followers
-                </button>
+                {canBroadcast ? (
+                  <button className="success-button full" onClick={handleCreateTrade}>
+                    Broadcast Trade to Followers
+                  </button>
+                ) : (
+                  <div className="feed-meta">
+                    Broadcasting is available to authorised broadcaster accounts.
+                  </div>
+                )}
 
                 <div className="feed-block">
                   <h4>Recent trade feed</h4>
@@ -271,24 +315,31 @@ export function TradeDashboard() {
               <div className="side-stack">
                 <UserPanel onLogout={() => setLoggedIn(false)} />
 
-                <div className="glass-card panel">
-                  <div className="panel-header compact">
-                    <h3>Follower accounts</h3>
-                    <span className="tiny-label">{followers.length} linked</span>
-                  </div>
+                {canBroadcast ? (
+                  <div className="glass-card panel">
+                    <div className="panel-header compact">
+                      <h3>Follower accounts</h3>
+                      <span className="tiny-label">Registry</span>
+                    </div>
 
-                  <div className="follower-list">
-                    {followers.map((follower) => (
-                      <div key={follower.account} className="follower-item">
-                        <div>
-                          <div className="follower-name">{follower.name}</div>
-                          <div className="feed-meta">{follower.account}</div>
-                        </div>
-                        <div className="follower-balance">$ {follower.balance.toLocaleString()}</div>
-                      </div>
-                    ))}
+                    <div className="feed-meta">
+                      Connected follower accounts will appear here once the
+                      secure account registry is connected to the dashboard.
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="glass-card panel">
+                    <div className="panel-header compact">
+                      <h3>Copy status</h3>
+                      <span className="tiny-label">Your account</span>
+                    </div>
+
+                    <div className="feed-meta">
+                      Your Deriv account is connected. Copy controls and
+                      account-specific risk settings will appear here.
+                    </div>
+                  </div>
+                )}
 
                 <div className="glass-card panel">
                   <h3>Commission rules</h3>

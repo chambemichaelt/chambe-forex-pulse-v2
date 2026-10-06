@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     const followerId = existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     const follower = saveFollowerAccount({
+      role: 'follower',
       id: followerId,
       userId: followerId,
       email,

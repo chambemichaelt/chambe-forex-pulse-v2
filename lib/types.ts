@@ -1,5 +1,6 @@
 export type TradeDirection = 'CALL' | 'PUT';
 export type ConnectionMode = 'broadcast' | 'read-only' | 'independent';
+export type ForexPulseRole = 'owner' | 'broadcaster' | 'follower';
 
 export interface Trade {
   id: string;
@@ -22,6 +23,7 @@ export interface Summary {
 }
 
 export interface DerivUser {
+  role: ForexPulseRole;
   id: string;
   email: string;
   balance: number;
