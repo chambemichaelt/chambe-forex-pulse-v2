@@ -1,20 +1,60 @@
-/**
- * Deriv OAuth initiation
- * Redirects user to Deriv OAuth authorization endpoint
- */
-
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
+
+const APP_ID =
+  process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkj2Rz';
+
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  'https://chambe-forex-pulse-v2.vercel.app';
+
+const REDIRECT_URI =
+  process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI ||
+  `${APP_URL}/api/deriv/callback`;
+
+function base64Url(buffer: Buffer): string {
+  return buffer
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
 
 export async function GET() {
-  const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || '34yYmvMto9OabbxhKj2Rz';
-  const redirectUri = process.env.NEXT_PUBLIC_DERIV_REDIRECT_URI || 'https://chambe-forex-pulse-v2.vercel.app';
+  const state = base64Url(crypto.randomBytes(32));
+  const codeVerifier = base64Url(crypto.randomBytes(32));
 
-  const oauthUrl = new URL('https://oauth.deriv.com/oauth2/authorize');
-  oauthUrl.searchParams.set('app_id', appId);
-  oauthUrl.searchParams.set('redirect_uri', `${redirectUri.replace(/\/$/, '')}/api/deriv/callback`);
-  oauthUrl.searchParams.set('brand', 'deriv');
-  oauthUrl.searchParams.set('scope', 'read,trade');
-  oauthUrl.searchParams.set('state', String(Date.now()));
+  const codeChallenge = base64Url(
+    crypto.createHash('sha256').update(codeVerifier).digest()
+  );
 
-  return NextResponse.redirect(oauthUrl.toString());
+  const oauthUrl = new URL('https://auth.deriv.com/oauth2/auth');
+
+  oauthUrl.searchParams.set('response_type', 'code');
+  oauthUrl.searchParams.set('client_id', APP_ID);
+  oauthUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+  oauthUrl.searchParams.set('scope', 'trade application_read');
+  oauthUrl.searchParams.set('state', state);
+  oauthUrl.searchParams.set('code_challenge', codeChallenge);
+  oauthUrl.searchParams.set('code_challenge_method', 'S256');
+
+  const response = NextResponse.redirect(oauthUrl.toString());
+
+  response.cookies.set('deriv_oauth_state', state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 10 * 60,
+    path: '/',
+  });
+
+  response.cookies.set('deriv_oauth_verifier', codeVerifier, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 10 * 60,
+    path: '/',
+  });
+
+  return response;
 }
