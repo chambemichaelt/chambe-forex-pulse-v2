@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSession } from '@/lib/session';
+import { getDerivAccountInfo } from '@/lib/deriv/account';
 
 const CLIENT_ID =
   process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkj2Rz';
@@ -96,18 +97,18 @@ export async function GET(request: Request) {
 
     /*
      * OAuth is successfully completed.
-     *
-     * Account information will be connected separately using
-     * the current Deriv API.
+     * Retrieve the real Deriv account information.
      */
+    const account = await getDerivAccountInfo(accessToken);
+
     const sessionId = createSession({
-      id: 'deriv_oauth_user',
-      email: '',
-      balance: 0,
-      currency: 'USD',
-      accountId: '',
+      id: account.accountId,
+      email: account.email,
+      balance: account.balance,
+      currency: account.currency,
+      accountId: account.accountId,
       token: accessToken,
-      loginId: '',
+      loginId: account.loginId,
       refreshToken: tokenData.refresh_token,
     });
 
