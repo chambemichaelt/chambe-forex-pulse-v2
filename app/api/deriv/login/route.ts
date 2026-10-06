@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 const APP_ID =
-  process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkj2Rz';
+  process.env.NEXT_PUBLIC_DERIV_APP_ID || '34yYmvMto9OabbxhKj2Rz';
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
@@ -40,21 +40,19 @@ export async function GET() {
 
   const response = NextResponse.redirect(oauthUrl.toString());
 
-  response.cookies.set('deriv_oauth_state', state, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    maxAge: 10 * 60,
-    path: '/',
-  });
-
-  response.cookies.set('deriv_oauth_verifier', codeVerifier, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    maxAge: 10 * 60,
-    path: '/',
-  });
+  // Store state and PKCE verifier together so the OAuth callback
+  // only depends on one temporary cookie.
+  response.cookies.set(
+    'deriv_oauth',
+    `${state}.${codeVerifier}`,
+    {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 10 * 60,
+      path: '/',
+    }
+  );
 
   return response;
 }

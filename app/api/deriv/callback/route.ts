@@ -21,8 +21,12 @@ export async function GET(request: Request) {
   const error = searchParams.get('error');
 
   const cookieStore = await cookies();
-  const savedState = cookieStore.get('deriv_oauth_state')?.value;
-  const codeVerifier = cookieStore.get('deriv_oauth_verifier')?.value;
+  const oauthCookie = cookieStore.get('deriv_oauth')?.value;
+  const separator = oauthCookie?.indexOf('.') ?? -1;
+  const savedState =
+    separator >= 0 ? oauthCookie?.slice(0, separator) : undefined;
+  const codeVerifier =
+    separator >= 0 ? oauthCookie?.slice(separator + 1) : undefined;
 
   if (error) {
     return NextResponse.redirect(
@@ -117,8 +121,7 @@ export async function GET(request: Request) {
       path: '/',
     });
 
-    response.cookies.delete('deriv_oauth_state');
-    response.cookies.delete('deriv_oauth_verifier');
+    response.cookies.delete('deriv_oauth');
 
     return response;
   } catch (err) {
