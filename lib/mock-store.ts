@@ -1,46 +1,48 @@
-/**
- * Session management utilities
- * In production, replace with Redis or database-backed sessions
- */
+export type TradeDirection = 'CALL' | 'PUT';
 
-import { SessionData, DerivUser } from './types';
+export type TradeRecord = {
+  id: string;
+  symbol: string;
+  direction: TradeDirection;
+  amount: number;
+  price: number;
+  commission: number;
+  status: 'open' | 'closed';
+  createdAt: string;
+  broadcaster: string;
+  followerCount: number;
+};
 
-const sessions = new Map<string, SessionData>();
+export const followerAccounts = [
+  { id: 'acct_01', name: 'Ava', balance: 12000, currency: 'USD' },
+  { id: 'acct_02', name: 'Leo', balance: 9000, currency: 'USD' },
+  { id: 'acct_03', name: 'Mina', balance: 15000, currency: 'USD' },
+  { id: 'acct_04', name: 'Ike', balance: 11000, currency: 'USD' },
+];
 
-export function generateSessionId(): string {
-  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-}
-
-export function createSession(user: DerivUser): string {
-  const sessionId = generateSessionId();
-  sessions.set(sessionId, {
-    user,
-    isAuthenticated: true,
-    createdAt: Date.now(),
-  });
-  return sessionId;
-}
-
-export function getSession(sessionId: string): SessionData | null {
-  const session = sessions.get(sessionId);
-
-  if (!session) return null;
-
-  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
-    sessions.delete(sessionId);
-    return null;
-  }
-
-  return session;
-}
-
-export function deleteSession(sessionId: string): void {
-  sessions.delete(sessionId);
-}
-
-export function updateSession(sessionId: string, user: DerivUser): void {
-  const session = sessions.get(sessionId);
-  if (session) {
-    session.user = user;
-  }
-}
+export const tradeStore: TradeRecord[] = [
+  {
+    id: 'trade_1001',
+    symbol: 'EURUSD',
+    direction: 'CALL',
+    amount: 100,
+    price: 1.0896,
+    commission: 3,
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    broadcaster: 'You',
+    followerCount: 4,
+  },
+  {
+    id: 'trade_1002',
+    symbol: 'USDJPY',
+    direction: 'PUT',
+    amount: 120,
+    price: 156.24,
+    commission: 3.6,
+    status: 'open',
+    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    broadcaster: 'You',
+    followerCount: 4,
+  },
+];

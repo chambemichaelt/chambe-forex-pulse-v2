@@ -1,39 +1,48 @@
 /**
- * Get current user info from session
+ * Session management utilities
+ * In production, replace with Redis or database-backed sessions
  */
 
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { getSession } from '@/lib/session';
+import { SessionData, DerivUser } from './types';
 
-export async function GET() {
-  const cookieStore = await cookies();
-  const sessionId = cookieStore.get('session_id')?.value;
+// In-memory session store (replace with Redis in production)
+const sessions = new Map<string, SessionData>();
 
-  if (!sessionId) {
-    return NextResponse.json(
-      { error: 'Not authenticated' },
-      { status: 401 }
-    );
-  }
+export function generateSessionId(): string {
+  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
 
-  const session = getSession(sessionId);
-
-  if (!session || !session.user) {
-    return NextResponse.json(
-      { error: 'Session expired' },
-      { status: 401 }
-    );
-  }
-
-  return NextResponse.json({
-    user: {
-      id: session.user.id,
-      email: session.user.email,
-      balance: session.user.balance,
-      currency: session.user.currency,
-      accountId: session.user.accountId,
-      loginId: session.user.loginId,
-    },
+export function createSession(user: DerivUser): string {
+  const sessionId = generateSessionId();
+  sessions.set(sessionId, {
+    user,
+    isAuthenticated: true,
+    createdAt: Date.now(),
   });
+  return sessionId;
+}
+
+export function getSession(sessionId: string): SessionData | null {
+  const session = sessions.get(sessionId);
+
+  if (!session) return null;
+
+  // Check if session expired (24 hours)
+  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
+    sessions.delete(sessionId);
+    return null;
+  }
+
+  return session;
+}
+
+export function deleteSession(sessionId: string): void {
+  sessions.delete(sessionId);
+}
+
+export function updateSession(sessionId: string, user: DerivUser): void {
+  const session = sessions.get(sessionId);
+  if (session) {
+    session.user = user;
+  }
 }

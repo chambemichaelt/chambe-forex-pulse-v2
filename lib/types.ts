@@ -1,38 +1,70 @@
-/**
- * Commission calculations for copy trading fees.
- * Default commission is 3% per follower trade.
- */
+export type TradeDirection = 'CALL' | 'PUT';
+export type ConnectionMode = 'broadcast' | 'read-only' | 'independent';
 
-export const COMMISSION_RATE = 0.03;
+export interface Trade {
+  id: string;
+  symbol: string;
+  direction: TradeDirection;
+  amount: number;
+  price: number;
+  commission: number;
+  status: 'open' | 'closed';
+  createdAt: string;
+  broadcaster: string;
+  followerCount: number;
+}
 
-export interface CommissionSummary {
+export interface Summary {
   totalVolume: number;
   totalCommission: number;
-  tradeCount: number;
-  rate: number;
+  openTrades: number;
+  commissionRate: number;
 }
 
-export function calculateCommission(amount: number, rate: number = COMMISSION_RATE): number {
-  return Number((amount * rate).toFixed(2));
+export interface DerivUser {
+  id: string;
+  email: string;
+  balance: number;
+  currency: string;
+  accountId: string;
+  token: string;
+  loginId: string;
+  refreshToken?: string;
 }
 
-export function calculateCommissionForTrade(
-  amount: number,
-  followerCount: number = 1,
-  rate: number = COMMISSION_RATE
-): number {
-  return Number((amount * followerCount * rate).toFixed(2));
+export interface SessionData {
+  user: DerivUser | null;
+  isAuthenticated: boolean;
+  createdAt: number;
 }
 
-export function summarizeCommissions(
-  totalVolume: number,
-  totalCommission: number,
-  tradeCount: number
-): CommissionSummary {
-  return {
-    totalVolume,
-    totalCommission,
-    tradeCount,
-    rate: COMMISSION_RATE,
-  };
+export type FollowerStatus = 'connected' | 'error' | 'disconnected';
+
+export interface FollowerAccount {
+  id: string;
+  userId: string;
+  email: string;
+  loginId: string;
+  accountId: string;
+  accessToken: string;
+  refreshToken?: string;
+  scopes: string[];
+  status: FollowerStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TradeRecord {
+  id: string;
+  symbol: string;
+  direction: TradeDirection;
+  amount: number;
+  price: number;
+  commission: number;
+  status: 'open' | 'closed';
+  createdAt: string;
+  broadcaster: string;
+  followerCount: number;
+  contractId?: number;
+  followerId?: string;
 }
