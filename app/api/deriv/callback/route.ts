@@ -233,7 +233,7 @@ export async function GET(request: Request) {
 
     const sessionId = await createSession({
       role,
-      id: account.accountId,
+      id: registeredUserId,
       email: account.email,
       balance: account.balance,
       currency: account.currency,
