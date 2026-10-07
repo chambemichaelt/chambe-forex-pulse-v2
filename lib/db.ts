@@ -30,6 +30,7 @@ export interface FollowerAccount {
   email: string;
   loginId: string;
   accountId: string;
+  connectionType: 'oauth' | 'pat';
   accessToken: string;
   refreshToken?: string;
   scopes: string[];
@@ -364,6 +365,7 @@ export function saveFollowerAccount(
   const now = new Date().toISOString();
   const account: FollowerAccount = {
     ...input,
+    connectionType: input.connectionType ?? 'oauth',
     accessToken: encryptToken(input.accessToken),
     refreshToken: input.refreshToken ? encryptToken(input.refreshToken) : undefined,
     createdAt: input.createdAt ?? now,
@@ -387,11 +389,13 @@ export async function registerFollowerAccount(input: {
   refreshToken?: string;
   scopes: string[];
   role?: ForexPulseAccountRole;
+  connectionType?: 'oauth' | 'pat';
 }): Promise<FollowerAccount> {
   const existing = await getFollowerAccountByAccountId(input.accountId);
   const now = new Date().toISOString();
 
   const role = existing?.role ?? input.role ?? 'follower';
+  const connectionType = input.connectionType ?? existing?.connectionType ?? 'oauth';
   const id =
     existing?.id ??
     `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -411,6 +415,7 @@ export async function registerFollowerAccount(input: {
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -425,6 +430,7 @@ export async function registerFollowerAccount(input: {
       ${input.email},
       ${input.loginId},
       ${input.accountId},
+      ${connectionType},
       ${encryptedAccessToken},
       ${encryptedRefreshToken ?? null},
       ${input.scopes},
@@ -438,6 +444,7 @@ export async function registerFollowerAccount(input: {
       role = EXCLUDED.role,
       email = EXCLUDED.email,
       login_id = EXCLUDED.login_id,
+      connection_type = EXCLUDED.connection_type,
       access_token = EXCLUDED.access_token,
       refresh_token = EXCLUDED.refresh_token,
       scopes = EXCLUDED.scopes,
@@ -450,6 +457,7 @@ export async function registerFollowerAccount(input: {
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -467,6 +475,7 @@ export async function registerFollowerAccount(input: {
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: '[stored securely]',
     refreshToken: row.refresh_token ? '[stored securely]' : undefined,
     scopes: row.scopes ?? [],
@@ -493,6 +502,7 @@ export async function updateFollowerRole(
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -512,6 +522,7 @@ export async function updateFollowerRole(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: '[stored securely]',
     refreshToken: row.refresh_token ? '[stored securely]' : undefined,
     scopes: row.scopes ?? [],
@@ -541,6 +552,7 @@ export async function getFollowerAccounts(): Promise<FollowerAccount[]> {
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -558,6 +570,7 @@ export async function getFollowerAccounts(): Promise<FollowerAccount[]> {
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -578,6 +591,7 @@ export async function getActiveFollowerAccounts(): Promise<FollowerAccount[]> {
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -596,6 +610,7 @@ export async function getActiveFollowerAccounts(): Promise<FollowerAccount[]> {
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -618,6 +633,7 @@ export async function getFollowerAccountByAccountId(
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -640,6 +656,7 @@ export async function getFollowerAccountByAccountId(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -662,6 +679,7 @@ export async function getFollowerAccountByUserId(
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -684,6 +702,7 @@ export async function getFollowerAccountByUserId(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -708,6 +727,7 @@ export async function getFollowerAccountByEmail(
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -730,6 +750,7 @@ export async function getFollowerAccountByEmail(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -805,6 +826,7 @@ export async function getBroadcasterFollowers(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)
@@ -889,6 +911,7 @@ export async function updateFollowerStatus(
       email,
       login_id,
       account_id,
+      connection_type,
       access_token,
       refresh_token,
       scopes,
@@ -908,6 +931,7 @@ export async function updateFollowerStatus(
     email: row.email,
     loginId: row.login_id,
     accountId: row.account_id,
+    connectionType: row.connection_type,
     accessToken: decryptToken(row.access_token),
     refreshToken: row.refresh_token
       ? decryptToken(row.refresh_token)

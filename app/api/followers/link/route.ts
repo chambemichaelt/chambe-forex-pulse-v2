@@ -30,6 +30,7 @@ export async function POST(req: Request) {
       email,
       loginId: loginId ?? `login_${Date.now()}`,
       accountId,
+      connectionType: 'oauth',
       accessToken,
       refreshToken,
       scopes,

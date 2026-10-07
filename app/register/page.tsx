@@ -18,6 +18,9 @@ export default function RegisterPage() {
     useState<RegistrationRole | null>(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showPat, setShowPat] = useState(false);
+  const [pat, setPat] = useState('');
+  const [patSubmitting, setPatSubmitting] = useState(false);
 
   const handleContinue = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,6 +63,39 @@ export default function RegisterPage() {
     }
   };
 
+  const handlePatConnect = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    setError('');
+    setPatSubmitting(true);
+
+    try {
+      const response = await fetch('/api/deriv/pat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pat }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error ?? 'Unable to connect the Deriv account.');
+        return;
+      }
+
+      setPat('');
+      router.push('/');
+    } catch {
+      setError('Unable to connect to Forex Pulse. Please try again.');
+    } finally {
+      setPatSubmitting(false);
+    }
+  };
+
   if (forexPulseId && registeredRole) {
     return (
       <main className="page-shell">
@@ -92,15 +128,89 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="primary-button full"
-              onClick={() => router.push('/api/deriv/login')}
-            >
-              Connect Deriv Account
-            </button>
+            <div style={{ marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                className="primary-button full"
+                onClick={() => router.push('/api/deriv/login')}
+              >
+                Connect with Deriv
+              </button>
+            </div>
 
-            <div className="feed-meta">
+            <div
+              style={{
+                textAlign: 'center',
+                margin: '1rem 0',
+                opacity: 0.7,
+              }}
+            >
+              or
+            </div>
+
+            {!showPat ? (
+              <button
+                type="button"
+                className="button-link secondary-link"
+                onClick={() => {
+                  setShowPat(true);
+                  setError('');
+                }}
+              >
+                Connect with Deriv API Token
+              </button>
+            ) : (
+              <form
+                onSubmit={handlePatConnect}
+                className="registration-form"
+              >
+                <label>
+                  <span>Deriv API Token</span>
+                  <input
+                    type="password"
+                    value={pat}
+                    onChange={(event) => setPat(event.target.value)}
+                    placeholder="Paste your Deriv API token"
+                    autoComplete="off"
+                    required
+                  />
+                  <small>
+                    Your token is sent securely to Forex Pulse for validation
+                    and encrypted storage. It is never displayed back to you.
+                  </small>
+                </label>
+
+                <button
+                  type="submit"
+                  className="primary-button full"
+                  disabled={patSubmitting}
+                >
+                  {patSubmitting
+                    ? 'Connecting...'
+                    : 'Connect API Token'}
+                </button>
+
+                <button
+                  type="button"
+                  className="button-link secondary-link"
+                  onClick={() => {
+                    setShowPat(false);
+                    setPat('');
+                    setError('');
+                  }}
+                >
+                  Use Deriv OAuth instead
+                </button>
+              </form>
+            )}
+
+            {error ? (
+              <div className="feed-meta" style={{ marginTop: '1rem' }}>
+                {error}
+              </div>
+            ) : null}
+
+            <div className="feed-meta" style={{ marginTop: '1rem' }}>
               Your Deriv account remains your own account. Forex Pulse uses
               your connection to provide the services associated with your
               profile.
@@ -145,7 +255,9 @@ export default function RegisterPage() {
               onClick={() => setRole('follower')}
             >
               <strong>Follower</strong>
-              <span>Follow a broadcaster using your own Deriv account.</span>
+              <span>
+                Follow a broadcaster using your own Deriv account.
+              </span>
             </button>
           </div>
 
@@ -177,13 +289,16 @@ export default function RegisterPage() {
                 <input
                   value={broadcasterForexPulseId}
                   onChange={(event) =>
-                    setBroadcasterForexPulseId(event.target.value.toUpperCase())
+                    setBroadcasterForexPulseId(
+                      event.target.value.toUpperCase()
+                    )
                   }
                   placeholder="Example: FP-123456"
                   required
                 />
                 <small>
-                  Enter the Forex Pulse ID of the broadcaster you want to follow.
+                  Enter the Forex Pulse ID of the broadcaster you want to
+                  follow.
                 </small>
               </label>
             ) : null}
@@ -195,10 +310,18 @@ export default function RegisterPage() {
             >
               {submitting
                 ? 'Creating profile...'
-                : `Create ${role === 'broadcaster' ? 'Broadcaster' : 'Follower'} Profile`}
+                : `Create ${
+                    role === 'broadcaster'
+                      ? 'Broadcaster'
+                      : 'Follower'
+                  } Profile`}
             </button>
 
-            {error ? <div className="feed-meta">{error}</div> : null}
+            {error ? (
+              <div className="feed-meta">
+                {error}
+              </div>
+            ) : null}
           </form>
 
           <button
