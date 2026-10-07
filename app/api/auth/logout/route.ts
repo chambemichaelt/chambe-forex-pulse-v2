@@ -15,7 +15,10 @@ export async function POST() {
   }
 
   const response = NextResponse.json({ ok: true });
+
   response.cookies.delete('session_id');
+  response.cookies.delete('deriv_oauth');
+  response.cookies.delete('forex_pulse_registration');
 
   return response;
 }

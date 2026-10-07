@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 const APP_ID =
@@ -20,7 +20,7 @@ function base64Url(buffer: Buffer): string {
     .replace(/=+$/, '');
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const state = base64Url(crypto.randomBytes(32));
   const codeVerifier = base64Url(crypto.randomBytes(32));
 
@@ -40,8 +40,6 @@ export async function GET() {
 
   const response = NextResponse.redirect(oauthUrl.toString());
 
-  // Store state and PKCE verifier together so the OAuth callback
-  // only depends on one temporary cookie.
   response.cookies.set(
     'deriv_oauth',
     `${state}.${codeVerifier}`,
@@ -53,6 +51,31 @@ export async function GET() {
       path: '/',
     }
   );
+
+  /*
+   * Preserve the signed registration state, if the user arrived
+   * through the self-service registration flow.
+   *
+   * The value is already cryptographically signed by the server.
+   * It is stored in an HttpOnly cookie so browser JavaScript
+   * cannot modify it.
+   */
+  const registrationState =
+    request.cookies.get('forex_pulse_registration')?.value;
+
+  if (registrationState) {
+    response.cookies.set(
+      'forex_pulse_registration',
+      registrationState,
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        maxAge: 10 * 60,
+        path: '/',
+      }
+    );
+  }
 
   return response;
 }

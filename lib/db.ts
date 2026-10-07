@@ -8,7 +8,19 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypt
 
 export type FollowerStatus = 'active' | 'paused' | 'inactive';
 export type ForexPulseAccountRole = 'owner' | 'broadcaster' | 'follower';
+export type ForexPulseUserStatus = 'pending' | 'active' | 'suspended' | 'disabled';
 export type TradeDirection = 'CALL' | 'PUT';
+
+export interface ForexPulseUser {
+  id: string;
+  forexPulseId: string;
+  email: string;
+  name: string;
+  role: ForexPulseAccountRole;
+  status: ForexPulseUserStatus;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface FollowerAccount {
   role: ForexPulseAccountRole;
@@ -49,6 +61,7 @@ export interface CommissionRecord {
   createdAt: string;
 }
 
+const users = new Map<string, ForexPulseUser>();
 const followers = new Map<string, FollowerAccount>();
 const trades = new Map<string, TradeRecord>();
 const commissions = new Map<string, CommissionRecord>();
@@ -84,6 +97,112 @@ export function decryptToken(encrypted: string): string {
   } catch (error) {
     return encrypted;
   }
+}
+
+function generateForexPulseId(): string {
+  let id = '';
+
+  do {
+    const number = Math.floor(100000 + Math.random() * 900000);
+    id = `FP-${number}`;
+  } while (
+    Array.from(users.values()).some(
+      (user) => user.forexPulseId === id
+    )
+  );
+
+  return id;
+}
+
+export function createForexPulseUser(input: {
+  email: string;
+  name: string;
+  role: Exclude<ForexPulseAccountRole, 'owner'>;
+}): ForexPulseUser {
+  const existing = getForexPulseUserByEmail(input.email);
+
+  if (existing) {
+    return existing;
+  }
+
+  const now = new Date().toISOString();
+
+  const user: ForexPulseUser = {
+    id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    forexPulseId: generateForexPulseId(),
+    email: input.email.trim().toLowerCase(),
+    name: input.name.trim(),
+    role: input.role,
+    status: 'pending',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  users.set(user.id, user);
+
+  return user;
+}
+
+export function getForexPulseUser(id: string): ForexPulseUser | null {
+  return users.get(id) ?? null;
+}
+
+export function getForexPulseUserByEmail(email: string): ForexPulseUser | null {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  for (const user of Array.from(users.values())) {
+    if (user.email === normalizedEmail) {
+      return user;
+    }
+  }
+
+  return null;
+}
+
+export function getForexPulseUsers(): ForexPulseUser[] {
+  return Array.from(users.values());
+}
+
+export function activateForexPulseUser(
+  id: string,
+  role: Exclude<ForexPulseAccountRole, 'owner'>
+): ForexPulseUser | null {
+  const user = users.get(id);
+
+  if (!user || user.role !== role) {
+    return null;
+  }
+
+  const updated: ForexPulseUser = {
+    ...user,
+    status: 'active',
+    updatedAt: new Date().toISOString(),
+  };
+
+  users.set(id, updated);
+
+  return updated;
+}
+
+export function updateForexPulseUserStatus(
+  id: string,
+  status: ForexPulseUserStatus
+): ForexPulseUser | null {
+  const user = users.get(id);
+
+  if (!user) {
+    return null;
+  }
+
+  const updated: ForexPulseUser = {
+    ...user,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+
+  users.set(id, updated);
+
+  return updated;
 }
 
 export function saveFollowerAccount(

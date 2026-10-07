@@ -2,10 +2,18 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSession } from '@/lib/session';
 import { getDerivAccountInfo } from '@/lib/deriv/account';
-import { registerFollowerAccount } from '@/lib/db';
+import {
+  activateForexPulseUser,
+  getForexPulseUser,
+  registerFollowerAccount,
+} from '@/lib/db';
+import {
+  readRegistrationState,
+  type RegistrationRole,
+} from '@/lib/registration';
 
 const CLIENT_ID =
-  process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkj2Rz';
+  process.env.NEXT_PUBLIC_DERIV_APP_ID || '34y4evMto90zbbhkjKj2Rz';
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
@@ -23,12 +31,18 @@ export async function GET(request: Request) {
   const error = searchParams.get('error');
 
   const cookieStore = await cookies();
+
   const oauthCookie = cookieStore.get('deriv_oauth')?.value;
   const separator = oauthCookie?.indexOf('.') ?? -1;
+
   const savedState =
     separator >= 0 ? oauthCookie?.slice(0, separator) : undefined;
+
   const codeVerifier =
     separator >= 0 ? oauthCookie?.slice(separator + 1) : undefined;
+
+  const registrationCookie =
+    cookieStore.get('forex_pulse_registration')?.value;
 
   if (error) {
     return NextResponse.redirect(
@@ -103,28 +117,62 @@ export async function GET(request: Request) {
     const account = await getDerivAccountInfo(accessToken);
 
     /*
-     * Determine the Forex Pulse platform role.
-     *
-     * The Owner account is configured through the server-side
-     * OWNER_DERIV_ACCOUNT_ID environment variable. All other
-     * newly connected accounts start as followers.
+     * Owner is always determined independently from self-service
+     * registration. A normal registration can never create an Owner.
      */
     const ownerAccountId =
       process.env.OWNER_DERIV_ACCOUNT_ID?.trim();
 
-    const role =
-      ownerAccountId &&
-      account.accountId === ownerAccountId
-        ? 'owner'
-        : 'follower';
+    const isOwner =
+      Boolean(ownerAccountId) &&
+      account.accountId === ownerAccountId;
+
+    let role: RegistrationRole | 'owner' = 'follower';
+    let registeredUserId: string | null = null;
 
     /*
-     * Register this Deriv account inside Forex Pulse.
+     * If this OAuth flow started from registration, recover the
+     * cryptographically signed registration identity and role.
+     */
+    if (registrationCookie) {
+      const registrationState =
+        readRegistrationState(registrationCookie);
+
+      if (registrationState) {
+        const registeredUser = getForexPulseUser(
+          registrationState.userId
+        );
+
+        if (
+          registeredUser &&
+          registeredUser.role === registrationState.role
+        ) {
+          registeredUserId = registeredUser.id;
+          role = registeredUser.role;
+        }
+      }
+    }
+
+    /*
+     * Owner identity always overrides self-service registration.
+     * Owner status can never be created through normal registration.
+     */
+    if (isOwner) {
+      role = 'owner';
+      registeredUserId = null;
+    }
+
+    /*
+     * Register the connected Deriv account.
      * The access token is encrypted before storage and is never
      * returned to the browser.
      */
+    if (registeredUserId && role !== 'owner') {
+      activateForexPulseUser(registeredUserId, role);
+    }
+
     registerFollowerAccount({
-      userId: account.accountId,
+      userId: registeredUserId ?? account.accountId,
       email: account.email,
       loginId: account.loginId,
       accountId: account.accountId,
@@ -157,6 +205,7 @@ export async function GET(request: Request) {
     });
 
     response.cookies.delete('deriv_oauth');
+    response.cookies.delete('forex_pulse_registration');
 
     return response;
   } catch (err) {

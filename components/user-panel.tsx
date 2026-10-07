@@ -35,12 +35,20 @@ export function UserPanel({ onLogout }: UserPanelProps) {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Logout request failed: ${response.status}`);
+      }
+
       setUser(null);
       onLogout?.();
       window.location.href = '/';
     } catch (err) {
       console.error('Logout failed:', err);
+      setError('Logout failed. Please try again.');
     }
   };
 
