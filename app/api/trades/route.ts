@@ -11,7 +11,7 @@ async function getAuthenticatedSession() {
     return null;
   }
 
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
 
   if (!session || !session.user) {
     return null;

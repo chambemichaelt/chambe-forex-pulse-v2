@@ -5,6 +5,7 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import { sql } from '@/lib/neon';
 
 export type FollowerStatus = 'active' | 'paused' | 'inactive';
 export type ForexPulseAccountRole = 'owner' | 'broadcaster' | 'follower';
@@ -99,89 +100,241 @@ export function decryptToken(encrypted: string): string {
   }
 }
 
-function generateForexPulseId(): string {
-  let id = '';
-
-  do {
+async function generateForexPulseId(): Promise<string> {
+  while (true) {
     const number = Math.floor(100000 + Math.random() * 900000);
-    id = `FP-${number}`;
-  } while (
-    Array.from(users.values()).some(
-      (user) => user.forexPulseId === id
-    )
-  );
+    const id = `FP-${number}`;
 
-  return id;
+    const rows = await sql`
+      SELECT 1
+      FROM forex_pulse_users
+      WHERE forex_pulse_id = ${id}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      return id;
+    }
+  }
 }
 
-export function createForexPulseUser(input: {
+export async function createForexPulseUser(input: {
   email: string;
   name: string;
   role: Exclude<ForexPulseAccountRole, 'owner'>;
-}): ForexPulseUser {
-  const existing = getForexPulseUserByEmail(input.email);
+}): Promise<ForexPulseUser> {
+  const normalizedEmail = input.email.trim().toLowerCase();
+
+  const existing = await getForexPulseUserByEmail(normalizedEmail);
 
   if (existing) {
     return existing;
   }
 
   const now = new Date().toISOString();
+  const id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const forexPulseId = await generateForexPulseId();
 
-  const user: ForexPulseUser = {
-    id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-    forexPulseId: generateForexPulseId(),
-    email: input.email.trim().toLowerCase(),
-    name: input.name.trim(),
-    role: input.role,
-    status: 'pending',
-    createdAt: now,
-    updatedAt: now,
+  const rows = await sql`
+    INSERT INTO forex_pulse_users (
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${id},
+      ${forexPulseId},
+      ${normalizedEmail},
+      ${input.name.trim()},
+      ${input.role},
+      'pending',
+      ${now},
+      ${now}
+    )
+    RETURNING
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+  `;
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
-
-  users.set(user.id, user);
-
-  return user;
 }
 
-export function getForexPulseUser(id: string): ForexPulseUser | null {
-  return users.get(id) ?? null;
-}
+export async function getForexPulseUser(
+  id: string
+): Promise<ForexPulseUser | null> {
+  const rows = await sql`
+    SELECT
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+    FROM forex_pulse_users
+    WHERE id = ${id}
+    LIMIT 1
+  `;
 
-export function getForexPulseUserByEmail(email: string): ForexPulseUser | null {
-  const normalizedEmail = email.trim().toLowerCase();
-
-  for (const user of Array.from(users.values())) {
-    if (user.email === normalizedEmail) {
-      return user;
-    }
+  if (rows.length === 0) {
+    return null;
   }
 
-  return null;
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function getForexPulseUserByEmail(
+  email: string
+): Promise<ForexPulseUser | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const rows = await sql`
+    SELECT
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+    FROM forex_pulse_users
+    WHERE email = ${normalizedEmail}
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function getForexPulseUserByForexPulseId(
+  forexPulseId: string
+): Promise<ForexPulseUser | null> {
+  const normalizedId = forexPulseId.trim().toUpperCase();
+
+  const rows = await sql`
+    SELECT
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+    FROM forex_pulse_users
+    WHERE forex_pulse_id = ${normalizedId}
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
 }
 
 export function getForexPulseUsers(): ForexPulseUser[] {
   return Array.from(users.values());
 }
 
-export function activateForexPulseUser(
+export async function activateForexPulseUser(
   id: string,
   role: Exclude<ForexPulseAccountRole, 'owner'>
-): ForexPulseUser | null {
-  const user = users.get(id);
+): Promise<ForexPulseUser | null> {
+  const rows = await sql`
+    UPDATE forex_pulse_users
+    SET
+      status = 'active',
+      updated_at = NOW()
+    WHERE id = ${id}
+      AND role = ${role}
+    RETURNING
+      id,
+      forex_pulse_id,
+      email,
+      name,
+      role,
+      status,
+      created_at,
+      updated_at
+  `;
 
-  if (!user || user.role !== role) {
+  if (rows.length === 0) {
     return null;
   }
 
-  const updated: ForexPulseUser = {
-    ...user,
-    status: 'active',
-    updatedAt: new Date().toISOString(),
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
-
-  users.set(id, updated);
-
-  return updated;
 }
 
 export function updateForexPulseUserStatus(
@@ -225,7 +378,7 @@ export function saveFollowerAccount(
   };
 }
 
-export function registerFollowerAccount(input: {
+export async function registerFollowerAccount(input: {
   userId: string;
   email: string;
   loginId: string;
@@ -234,56 +387,135 @@ export function registerFollowerAccount(input: {
   refreshToken?: string;
   scopes: string[];
   role?: ForexPulseAccountRole;
-}): FollowerAccount {
-  const existing = getFollowerAccountByAccountId(input.accountId);
+}): Promise<FollowerAccount> {
+  const existing = await getFollowerAccountByAccountId(input.accountId);
   const now = new Date().toISOString();
 
-  const account: FollowerAccount = {
-    role: existing?.role ?? input.role ?? 'follower',
-    id: existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-    userId: input.userId,
-    email: input.email,
-    loginId: input.loginId,
-    accountId: input.accountId,
-    accessToken: encryptToken(input.accessToken),
-    refreshToken: input.refreshToken
-      ? encryptToken(input.refreshToken)
-      : undefined,
-    scopes: input.scopes,
-    status: 'active',
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
+  const role = existing?.role ?? input.role ?? 'follower';
+  const id =
+    existing?.id ??
+    `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  followers.set(account.id, account);
+  const encryptedAccessToken = encryptToken(input.accessToken);
+  const encryptedRefreshToken = input.refreshToken
+    ? encryptToken(input.refreshToken)
+    : existing?.refreshToken;
+
+  const rows = await sql`
+    INSERT INTO deriv_accounts (
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${id},
+      ${input.userId},
+      ${role},
+      ${input.email},
+      ${input.loginId},
+      ${input.accountId},
+      ${encryptedAccessToken},
+      ${encryptedRefreshToken ?? null},
+      ${input.scopes},
+      'active',
+      ${existing?.createdAt ?? now},
+      ${now}
+    )
+    ON CONFLICT (account_id)
+    DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      role = EXCLUDED.role,
+      email = EXCLUDED.email,
+      login_id = EXCLUDED.login_id,
+      access_token = EXCLUDED.access_token,
+      refresh_token = EXCLUDED.refresh_token,
+      scopes = EXCLUDED.scopes,
+      status = 'active',
+      updated_at = EXCLUDED.updated_at
+    RETURNING
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+  `;
+
+  const row = rows[0];
 
   return {
-    ...account,
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
     accessToken: '[stored securely]',
-    refreshToken: account.refreshToken ? '[stored securely]' : undefined,
+    refreshToken: row.refresh_token ? '[stored securely]' : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
-export function updateFollowerRole(
+export async function updateFollowerRole(
   id: string,
   role: ForexPulseAccountRole
-): FollowerAccount | null {
-  const account = followers.get(id);
+): Promise<FollowerAccount | null> {
+  const rows = await sql`
+    UPDATE deriv_accounts
+    SET
+      role = ${role},
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+  `;
 
-  if (!account) return null;
+  if (rows.length === 0) return null;
 
-  const updated = {
-    ...account,
-    role,
-    updatedAt: new Date().toISOString(),
-  };
-
-  followers.set(id, updated);
+  const row = rows[0];
 
   return {
-    ...updated,
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
     accessToken: '[stored securely]',
-    refreshToken: updated.refreshToken ? '[stored securely]' : undefined,
+    refreshToken: row.refresh_token ? '[stored securely]' : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
@@ -298,107 +530,506 @@ export function getFollowerAccount(id: string): FollowerAccount | null {
   };
 }
 
-export function getFollowerAccounts(): FollowerAccount[] {
-  return Array.from(followers.values()).map((account) => ({
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
+export async function getFollowerAccounts(): Promise<FollowerAccount[]> {
+  const rows = await sql`
+    SELECT
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    FROM deriv_accounts
+    ORDER BY created_at ASC
+  `;
+
+  return rows.map((row) => ({
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
+      : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   }));
 }
 
-export function getActiveFollowerAccounts(): FollowerAccount[] {
-  return getFollowerAccounts().filter((account) => account.status === 'active');
-}
+export async function getActiveFollowerAccounts(): Promise<FollowerAccount[]> {
+  const rows = await sql`
+    SELECT
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    FROM deriv_accounts
+    WHERE status = 'active'
+    ORDER BY created_at ASC
+  `;
 
-export function getFollowerAccountByAccountId(accountId: string): FollowerAccount | null {
-  const account = Array.from(followers.values()).find(
-    (item) => item.accountId === accountId
-  );
-
-  if (!account) return null;
-
-  return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken
-      ? decryptToken(account.refreshToken)
+  return rows.map((row) => ({
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
       : undefined,
-  };
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }));
 }
 
-export function getFollowerAccountByUserId(userId: string): FollowerAccount | null {
-  const account = Array.from(followers.values()).find(
-    (item) => item.userId === userId
-  );
+export async function getFollowerAccountByAccountId(
+  accountId: string
+): Promise<FollowerAccount | null> {
+  const rows = await sql`
+    SELECT
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    FROM deriv_accounts
+    WHERE account_id = ${accountId}
+    LIMIT 1
+  `;
 
-  if (!account) return null;
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
 
   return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken
-      ? decryptToken(account.refreshToken)
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
       : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
-export function getFollowerAccountByEmail(email: string): FollowerAccount | null {
-  const account = Array.from(followers.values()).find(
-    (item) => item.email.toLowerCase() === email.toLowerCase()
-  );
-  if (!account) return null;
+export async function getFollowerAccountByUserId(
+  userId: string
+): Promise<FollowerAccount | null> {
+  const rows = await sql`
+    SELECT
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    FROM deriv_accounts
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
 
   return {
-    ...account,
-    accessToken: decryptToken(account.accessToken),
-    refreshToken: account.refreshToken ? decryptToken(account.refreshToken) : undefined,
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
+      : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
-export function updateFollowerStatus(id: string, status: FollowerStatus): FollowerAccount | null {
-  const account = followers.get(id);
-  if (!account) return null;
+export async function getFollowerAccountByEmail(
+  email: string
+): Promise<FollowerAccount | null> {
+  const normalizedEmail = email.trim().toLowerCase();
 
-  const updated = {
-    ...account,
-    status,
-    updatedAt: new Date().toISOString(),
-  };
+  const rows = await sql`
+    SELECT
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+    FROM deriv_accounts
+    WHERE LOWER(email) = ${normalizedEmail}
+    LIMIT 1
+  `;
 
-  followers.set(id, updated);
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
+
   return {
-    ...updated,
-    accessToken: decryptToken(updated.accessToken),
-    refreshToken: updated.refreshToken ? decryptToken(updated.refreshToken) : undefined,
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
+      : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
-export function deleteFollowerAccount(id: string): boolean {
-  return followers.delete(id);
+export async function linkBroadcasterFollower(
+  broadcasterUserId: string,
+  followerUserId: string
+): Promise<void> {
+  if (broadcasterUserId === followerUserId) {
+    throw new Error('A user cannot follow themselves');
+  }
+
+  await sql`
+    INSERT INTO broadcaster_followers (
+      id,
+      broadcaster_user_id,
+      follower_user_id,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${`bf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`},
+      ${broadcasterUserId},
+      ${followerUserId},
+      'active',
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (broadcaster_user_id, follower_user_id)
+    DO UPDATE SET
+      status = 'active',
+      updated_at = NOW()
+  `;
 }
 
-export function saveTrade(trade: TradeRecord): TradeRecord {
-  trades.set(trade.id, trade);
+export async function getBroadcasterFollowers(
+  broadcasterUserId: string
+): Promise<FollowerAccount[]> {
+  const rows = await sql`
+    SELECT
+      da.id,
+      da.user_id,
+      da.role,
+      da.email,
+      da.login_id,
+      da.account_id,
+      da.access_token,
+      da.refresh_token,
+      da.scopes,
+      da.status,
+      da.created_at,
+      da.updated_at
+    FROM broadcaster_followers bf
+    INNER JOIN deriv_accounts da
+      ON da.user_id = bf.follower_user_id
+    WHERE bf.broadcaster_user_id = ${broadcasterUserId}
+      AND bf.status = 'active'
+    ORDER BY bf.created_at ASC
+  `;
+
+  return rows.map((row) => ({
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
+      : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }));
+}
+
+export async function getFollowerBroadcaster(
+  followerUserId: string
+): Promise<ForexPulseUser | null> {
+  const rows = await sql`
+    SELECT
+      u.id,
+      u.forex_pulse_id,
+      u.email,
+      u.name,
+      u.role,
+      u.status,
+      u.created_at,
+      u.updated_at
+    FROM broadcaster_followers bf
+    INNER JOIN forex_pulse_users u
+      ON u.id = bf.broadcaster_user_id
+    WHERE bf.follower_user_id = ${followerUserId}
+      AND bf.status = 'active'
+    ORDER BY bf.created_at ASC
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
+
+  return {
+    id: row.id,
+    forexPulseId: row.forex_pulse_id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function updateBroadcasterFollowerStatus(
+  broadcasterUserId: string,
+  followerUserId: string,
+  status: FollowerStatus
+): Promise<boolean> {
+  const rows = await sql`
+    UPDATE broadcaster_followers
+    SET
+      status = ${status},
+      updated_at = NOW()
+    WHERE broadcaster_user_id = ${broadcasterUserId}
+      AND follower_user_id = ${followerUserId}
+    RETURNING id
+  `;
+
+  return rows.length > 0;
+}
+
+export async function updateFollowerStatus(
+  id: string,
+  status: FollowerStatus
+): Promise<FollowerAccount | null> {
+  const rows = await sql`
+    UPDATE deriv_accounts
+    SET
+      status = ${status},
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING
+      id,
+      user_id,
+      role,
+      email,
+      login_id,
+      account_id,
+      access_token,
+      refresh_token,
+      scopes,
+      status,
+      created_at,
+      updated_at
+  `;
+
+  if (rows.length === 0) return null;
+
+  const row = rows[0];
+
+  return {
+    role: row.role,
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    loginId: row.login_id,
+    accountId: row.account_id,
+    accessToken: decryptToken(row.access_token),
+    refreshToken: row.refresh_token
+      ? decryptToken(row.refresh_token)
+      : undefined,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function deleteFollowerAccount(id: string): Promise<boolean> {
+  const rows = await sql`
+    DELETE FROM deriv_accounts
+    WHERE id = ${id}
+    RETURNING id
+  `;
+
+  return rows.length > 0;
+}
+
+export async function saveTrade(trade: TradeRecord): Promise<TradeRecord> {
+  await sql`
+    INSERT INTO trades (
+      id, symbol, direction, amount, price, commission, status,
+      created_at, broadcaster, follower_count, contract_id, follower_id
+    )
+    VALUES (
+      ${trade.id},
+      ${trade.symbol},
+      ${trade.direction},
+      ${trade.amount},
+      ${trade.price},
+      ${trade.commission},
+      ${trade.status},
+      ${trade.createdAt},
+      ${trade.broadcaster},
+      ${trade.followerCount},
+      ${trade.contractId ?? null},
+      ${trade.followerId ?? null}
+    )
+    ON CONFLICT (id)
+    DO UPDATE SET
+      symbol = EXCLUDED.symbol,
+      direction = EXCLUDED.direction,
+      amount = EXCLUDED.amount,
+      price = EXCLUDED.price,
+      commission = EXCLUDED.commission,
+      status = EXCLUDED.status,
+      broadcaster = EXCLUDED.broadcaster,
+      follower_count = EXCLUDED.follower_count,
+      contract_id = EXCLUDED.contract_id,
+      follower_id = EXCLUDED.follower_id
+  `;
   return trade;
 }
 
-export function getTrades(): TradeRecord[] {
-  return Array.from(trades.values());
+export async function getTrades(): Promise<TradeRecord[]> {
+  const rows = await sql`
+    SELECT
+      id, symbol, direction, amount, price, commission, status,
+      created_at, broadcaster, follower_count, contract_id, follower_id
+    FROM trades
+    ORDER BY created_at DESC
+  `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    symbol: row.symbol,
+    direction: row.direction,
+    amount: Number(row.amount),
+    price: Number(row.price),
+    commission: Number(row.commission),
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    broadcaster: row.broadcaster,
+    followerCount: Number(row.follower_count),
+    contractId: row.contract_id == null ? undefined : Number(row.contract_id),
+    followerId: row.follower_id ?? undefined,
+  }));
 }
 
-export function addCommission(record: Omit<CommissionRecord, 'id' | 'createdAt'>): CommissionRecord {
+export async function addCommission(
+  record: Omit<CommissionRecord, 'id' | 'createdAt'>
+): Promise<CommissionRecord> {
   const commission: CommissionRecord = {
     ...record,
     id: `commission_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
     createdAt: new Date().toISOString(),
   };
 
-  commissions.set(commission.id, commission);
+  await sql`
+    INSERT INTO commissions (
+      id, trade_id, follower_id, amount, rate, created_at
+    )
+    VALUES (
+      ${commission.id},
+      ${commission.tradeId},
+      ${commission.followerId},
+      ${commission.amount},
+      ${commission.rate},
+      ${commission.createdAt}
+    )
+  `;
+
   return commission;
 }
 
-export function getCommissions(): CommissionRecord[] {
-  return Array.from(commissions.values());
+export async function getCommissions(): Promise<CommissionRecord[]> {
+  const rows = await sql`
+    SELECT
+      id, trade_id, follower_id, amount, rate, created_at
+    FROM commissions
+    ORDER BY created_at DESC
+  `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    tradeId: row.trade_id,
+    followerId: row.follower_id,
+    amount: Number(row.amount),
+    rate: Number(row.rate),
+    createdAt: new Date(row.created_at).toISOString(),
+  }));
 }
 
 export function resetDb(): void {
@@ -435,5 +1066,5 @@ export function seedDemoData(): void {
     },
   ];
 
-  demoTrades.forEach((trade) => saveTrade(trade));
+  void Promise.all(demoTrades.map((trade) => saveTrade(trade)));
 }

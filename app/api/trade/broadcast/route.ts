@@ -14,7 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Session expired' }, { status: 401 });
     }
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     });
 
     const commission = calculateCommission(amount);
-    const tradeRecord = saveTrade({
+    const tradeRecord = await saveTrade({
       id: `trade_${Date.now()}`,
       symbol,
       direction: direction as 'CALL' | 'PUT',
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
       contractId: tradeResponse.buy.contract_id,
     });
 
-    addCommission({
+    await addCommission({
       tradeId: tradeRecord.id,
       followerId: session.user.id,
       amount: commission,

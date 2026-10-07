@@ -139,7 +139,7 @@ export async function GET(request: Request) {
         readRegistrationState(registrationCookie);
 
       if (registrationState) {
-        const registeredUser = getForexPulseUser(
+        const registeredUser = await getForexPulseUser(
           registrationState.userId
         );
 
@@ -168,10 +168,10 @@ export async function GET(request: Request) {
      * returned to the browser.
      */
     if (registeredUserId && role !== 'owner') {
-      activateForexPulseUser(registeredUserId, role);
+      await activateForexPulseUser(registeredUserId, role);
     }
 
-    registerFollowerAccount({
+    await registerFollowerAccount({
       userId: registeredUserId ?? account.accountId,
       email: account.email,
       loginId: account.loginId,
@@ -182,7 +182,7 @@ export async function GET(request: Request) {
       role,
     });
 
-    const sessionId = createSession({
+    const sessionId = await createSession({
       role,
       id: account.accountId,
       email: account.email,

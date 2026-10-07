@@ -18,7 +18,7 @@ async function requireManager() {
     };
   }
 
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
 
   if (!session || !session.user) {
     return {
@@ -85,7 +85,7 @@ export async function PATCH(req: Request) {
         );
       }
 
-      const updated = updateFollowerRole(
+      const updated = await updateFollowerRole(
         followerId,
         requestedRole as 'broadcaster' | 'follower'
       );
@@ -130,7 +130,7 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const updated = updateFollowerStatus(
+    const updated = await updateFollowerStatus(
       followerId,
       status as 'active' | 'paused' | 'inactive'
     );
@@ -196,7 +196,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    const deleted = deleteFollowerAccount(followerId);
+    const deleted = await deleteFollowerAccount(followerId);
 
     if (!deleted) {
       return NextResponse.json(

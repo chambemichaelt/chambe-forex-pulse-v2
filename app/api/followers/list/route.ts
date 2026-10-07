@@ -17,7 +17,7 @@ export async function GET() {
       );
     }
 
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
 
     if (!session || !session.user) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function GET() {
       );
     }
 
-    const followers = getFollowerAccounts();
+    const followers = await getFollowerAccounts();
 
     const safeFollowers = followers.map((follower) => ({
       id: follower.id,

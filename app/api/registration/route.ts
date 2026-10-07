@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   createForexPulseUser,
   getForexPulseUserByEmail,
+  getForexPulseUserByForexPulseId,
+  linkBroadcasterFollower,
 } from '@/lib/db';
 import {
   createRegistrationState,
@@ -16,6 +18,10 @@ export async function POST(request: NextRequest) {
     const email =
       typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const role = body.role as RegistrationRole;
+    const broadcasterForexPulseId =
+      typeof body.broadcasterForexPulseId === 'string'
+        ? body.broadcasterForexPulseId.trim().toUpperCase()
+        : '';
 
     if (!name || !email || !role) {
       return NextResponse.json(
@@ -38,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = getForexPulseUserByEmail(email);
+    const existing = await getForexPulseUserByEmail(email);
 
     if (existing) {
       return NextResponse.json(
@@ -56,11 +62,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = createForexPulseUser({
+    let broadcaster = null;
+
+    if (role === 'follower') {
+      if (!broadcasterForexPulseId) {
+        return NextResponse.json(
+          { error: 'A broadcaster Forex Pulse ID is required for followers.' },
+          { status: 400 }
+        );
+      }
+
+      broadcaster = await getForexPulseUserByForexPulseId(
+        broadcasterForexPulseId
+      );
+
+      if (!broadcaster) {
+        return NextResponse.json(
+          { error: 'The broadcaster Forex Pulse ID was not found.' },
+          { status: 404 }
+        );
+      }
+
+      if (broadcaster.role !== 'broadcaster') {
+        return NextResponse.json(
+          { error: 'That Forex Pulse ID does not belong to a broadcaster.' },
+          { status: 400 }
+        );
+      }
+
+      if (broadcaster.status !== 'active') {
+        return NextResponse.json(
+          { error: 'That broadcaster is not currently active.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const user = await createForexPulseUser({
       name,
       email,
       role,
     });
+
+    if (broadcaster) {
+      await linkBroadcasterFollower(broadcaster.id, user.id);
+    }
 
     const registrationState = createRegistrationState({
       userId: user.id,

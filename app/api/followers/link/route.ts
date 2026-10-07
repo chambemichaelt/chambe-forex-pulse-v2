@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const existing = getFollowerAccountByEmail(email);
+    const existing = await getFollowerAccountByEmail(email);
     const followerId = existing?.id ?? `follower_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     const follower = saveFollowerAccount({

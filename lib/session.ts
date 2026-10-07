@@ -1,48 +1,114 @@
 /**
- * Session management utilities
- * In production, replace with Redis or database-backed sessions
+ * Durable session management using Neon PostgreSQL.
  */
 
+import { neon } from '@neondatabase/serverless';
 import { SessionData, DerivUser } from './types';
+import crypto from 'crypto';
 
-// In-memory session store (replace with Redis in production)
-const sessions = new Map<string, SessionData>();
+function getDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL;
 
-export function generateSessionId(): string {
-  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  if (!url) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  return url;
 }
 
-export function createSession(user: DerivUser): string {
+export function generateSessionId(): string {
+  return `session_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
+}
+
+export async function createSession(user: DerivUser): Promise<string> {
+  const sql = neon(getDatabaseUrl());
   const sessionId = generateSessionId();
-  sessions.set(sessionId, {
+  const now = Date.now();
+  const expiresAt = new Date(now + 24 * 60 * 60 * 1000);
+
+  const sessionData: SessionData = {
     user,
     isAuthenticated: true,
-    createdAt: Date.now(),
-  });
+    createdAt: now,
+  };
+
+  await sql`
+    INSERT INTO sessions (
+      id,
+      user_id,
+      role,
+      account_id,
+      session_data,
+      created_at,
+      expires_at
+    )
+    VALUES (
+      ${sessionId},
+      ${user.id},
+      ${user.role},
+      ${user.accountId},
+      ${JSON.stringify(sessionData)}::jsonb,
+      NOW(),
+      ${expiresAt.toISOString()}
+    )
+  `;
+
   return sessionId;
 }
 
-export function getSession(sessionId: string): SessionData | null {
-  const session = sessions.get(sessionId);
+export async function getSession(
+  sessionId: string
+): Promise<SessionData | null> {
+  const sql = neon(getDatabaseUrl());
 
-  if (!session) return null;
+  const rows = await sql`
+    SELECT session_data, expires_at
+    FROM sessions
+    WHERE id = ${sessionId}
+    LIMIT 1
+  `;
 
-  // Check if session expired (24 hours)
-  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
-    sessions.delete(sessionId);
+  if (rows.length === 0) {
     return null;
   }
 
-  return session;
-}
+  const row = rows[0];
 
-export function deleteSession(sessionId: string): void {
-  sessions.delete(sessionId);
-}
-
-export function updateSession(sessionId: string, user: DerivUser): void {
-  const session = sessions.get(sessionId);
-  if (session) {
-    session.user = user;
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    await deleteSession(sessionId);
+    return null;
   }
+
+  return row.session_data as SessionData;
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const sql = neon(getDatabaseUrl());
+
+  await sql`
+    DELETE FROM sessions
+    WHERE id = ${sessionId}
+  `;
+}
+
+export async function updateSession(
+  sessionId: string,
+  user: DerivUser
+): Promise<void> {
+  const sql = neon(getDatabaseUrl());
+
+  const sessionData: SessionData = {
+    user,
+    isAuthenticated: true,
+    createdAt: Date.now(),
+  };
+
+  await sql`
+    UPDATE sessions
+    SET
+      role = ${user.role},
+      account_id = ${user.accountId},
+      session_data = ${JSON.stringify(sessionData)}::jsonb
+    WHERE id = ${sessionId}
+  `;
 }

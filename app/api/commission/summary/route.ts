@@ -4,8 +4,8 @@ import { summarizeCommissions } from '@/lib/commission';
 
 export async function GET() {
   try {
-    const commissions = getCommissions();
-    const trades = getTrades();
+    const commissions = await getCommissions();
+    const trades = await getTrades();
 
     const totalVolume = trades.reduce((sum, trade) => sum + trade.amount, 0);
     const totalCommission = commissions.reduce((sum, comm) => sum + comm.amount, 0);

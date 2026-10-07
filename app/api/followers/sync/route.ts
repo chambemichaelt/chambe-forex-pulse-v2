@@ -15,7 +15,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 400 });
     }
 
-    const followers = getActiveFollowerAccounts();
+    const followers = await getActiveFollowerAccounts();
     const results: Array<{ followerId: string; success: boolean; contractId?: number; error?: string }> = [];
 
     for (const follower of followers) {
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
         });
 
         const commission = calculateCommission(amount);
-        const tradeRecord = saveTrade({
+        const tradeRecord = await saveTrade({
           id: `trade_${Date.now()}_${follower.id}`,
           symbol,
           direction: direction as 'CALL' | 'PUT',
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
           followerId: follower.id,
         });
 
-        addCommission({
+        await addCommission({
           tradeId: tradeRecord.id,
           followerId: follower.id,
           amount: commission,

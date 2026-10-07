@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const [role, setRole] = useState<RegistrationRole>('follower');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [broadcasterForexPulseId, setBroadcasterForexPulseId] = useState('');
   const [message, setMessage] = useState('');
   const [forexPulseId, setForexPulseId] = useState('');
   const [registeredRole, setRegisteredRole] =
@@ -37,6 +38,8 @@ export default function RegisterPage() {
           name,
           email,
           role,
+          broadcasterForexPulseId:
+            role === 'follower' ? broadcasterForexPulseId : undefined,
         }),
       });
 
@@ -167,6 +170,23 @@ export default function RegisterPage() {
                 required
               />
             </label>
+
+            {role === 'follower' ? (
+              <label>
+                <span>Broadcaster Forex Pulse ID</span>
+                <input
+                  value={broadcasterForexPulseId}
+                  onChange={(event) =>
+                    setBroadcasterForexPulseId(event.target.value.toUpperCase())
+                  }
+                  placeholder="Example: FP-123456"
+                  required
+                />
+                <small>
+                  Enter the Forex Pulse ID of the broadcaster you want to follow.
+                </small>
+              </label>
+            ) : null}
 
             <button
               type="submit"
