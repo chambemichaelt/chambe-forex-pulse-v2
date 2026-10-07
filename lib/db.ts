@@ -399,7 +399,9 @@ export async function registerFollowerAccount(input: {
   const encryptedAccessToken = encryptToken(input.accessToken);
   const encryptedRefreshToken = input.refreshToken
     ? encryptToken(input.refreshToken)
-    : existing?.refreshToken;
+    : existing?.refreshToken
+      ? encryptToken(existing.refreshToken)
+      : undefined;
 
   const rows = await sql`
     INSERT INTO deriv_accounts (

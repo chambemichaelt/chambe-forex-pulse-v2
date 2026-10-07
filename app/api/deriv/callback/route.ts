@@ -5,6 +5,7 @@ import { getDerivAccountInfo } from '@/lib/deriv/account';
 import {
   activateForexPulseUser,
   getForexPulseUser,
+  getFollowerAccountByAccountId,
   registerFollowerAccount,
 } from '@/lib/db';
 import {
@@ -154,25 +155,73 @@ export async function GET(request: Request) {
     }
 
     /*
-     * Owner identity always overrides self-service registration.
-     * Owner status can never be created through normal registration.
+     * For an existing-account connection, recover the Forex Pulse
+     * user from the already-linked Deriv account. Never use the
+     * Deriv account ID itself as a Forex Pulse user ID.
      */
-    if (isOwner) {
-      role = 'owner';
-      registeredUserId = null;
+    if (!registeredUserId) {
+      const existingAccount =
+        await getFollowerAccountByAccountId(account.accountId);
+
+      if (existingAccount) {
+        registeredUserId = existingAccount.userId;
+        role = existingAccount.role;
+      }
     }
 
     /*
-     * Register the connected Deriv account.
-     * The access token is encrypted before storage and is never
-     * returned to the browser.
+     * Owner identity is determined only by the configured Deriv
+     * account ID. An Owner must already have a Forex Pulse profile.
+     * Never use the Deriv account ID as the database user ID.
      */
-    if (registeredUserId && role !== 'owner') {
+    if (isOwner) {
+      const existingOwnerAccount =
+        await getFollowerAccountByAccountId(account.accountId);
+
+      if (!existingOwnerAccount) {
+        return NextResponse.redirect(
+          `${APP_URL}?error=owner_profile_missing`
+        );
+      }
+
+      const ownerUser = await getForexPulseUser(
+        existingOwnerAccount.userId
+      );
+
+      if (!ownerUser || ownerUser.role !== 'owner') {
+        return NextResponse.redirect(
+          `${APP_URL}?error=owner_profile_missing`
+        );
+      }
+
+      registeredUserId = ownerUser.id;
+      role = 'owner';
+    }
+
+    /*
+     * No registration and no existing account means this Deriv
+     * account has not been onboarded into Forex Pulse yet.
+     */
+    if (!registeredUserId) {
+      return NextResponse.redirect(
+        `${APP_URL}?error=registration_required`
+      );
+    }
+
+    /*
+     * Activate self-service broadcaster/follower profiles.
+     */
+    if (role !== 'owner') {
       await activateForexPulseUser(registeredUserId, role);
     }
 
+    /*
+     * Register or refresh the connected Deriv account.
+     * The access token is encrypted before storage and is never
+     * returned to the browser.
+     */
     await registerFollowerAccount({
-      userId: registeredUserId ?? account.accountId,
+      userId: registeredUserId,
       email: account.email,
       loginId: account.loginId,
       accountId: account.accountId,
