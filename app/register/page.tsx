@@ -13,6 +13,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [forexPulseId, setForexPulseId] = useState('');
+  const [registeredRole, setRegisteredRole] =
+    useState<RegistrationRole | null>(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -21,6 +23,7 @@ export default function RegisterPage() {
 
     setMessage('');
     setForexPulseId('');
+    setRegisteredRole(null);
     setError('');
     setSubmitting(true);
 
@@ -45,15 +48,65 @@ export default function RegisterPage() {
       }
 
       setForexPulseId(data.user.forexPulseId);
-      setMessage(
-        `Registration created. Your Forex Pulse profile is pending activation as a ${role}.`
-      );
+      setRegisteredRole(data.user.role);
+      setMessage('Your Forex Pulse profile has been created.');
     } catch {
       setError('Unable to connect to Forex Pulse. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (forexPulseId && registeredRole) {
+    return (
+      <main className="page-shell">
+        <div className="app-frame">
+          <section className="glass-card auth-card">
+            <div className="eyebrow">Chambe Forex Pulse</div>
+
+            <h1>Profile Created</h1>
+
+            <p>{message}</p>
+
+            <div className="feed-meta">
+              <strong>Forex Pulse ID</strong>
+
+              <div
+                style={{
+                  fontSize: '1.7rem',
+                  fontWeight: 700,
+                  marginTop: '0.4rem',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {forexPulseId}
+              </div>
+
+              <div style={{ marginTop: '0.5rem' }}>
+                {registeredRole === 'broadcaster'
+                  ? 'Broadcaster'
+                  : 'Follower'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="primary-button full"
+              onClick={() => router.push('/api/deriv/login')}
+            >
+              Connect Deriv Account
+            </button>
+
+            <div className="feed-meta">
+              Your Deriv account remains your own account. Forex Pulse uses
+              your connection to provide the services associated with your
+              profile.
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="page-shell">
@@ -64,33 +117,32 @@ export default function RegisterPage() {
           <h1>Create your Forex Pulse profile</h1>
 
           <p>
-            Choose how you want to participate in the Forex Pulse network.
-            You can connect your Deriv account after registration.
+            Choose your role and create your Forex Pulse profile.
           </p>
 
           <div className="role-choice-grid">
             <button
               type="button"
-              className={role === 'broadcaster' ? 'role-card active' : 'role-card'}
+              className={
+                role === 'broadcaster'
+                  ? 'role-card active'
+                  : 'role-card'
+              }
               onClick={() => setRole('broadcaster')}
             >
-              <strong>Register as Broadcaster</strong>
-              <span>
-                Build your own trading feed and broadcast signals to your
-                followers.
-              </span>
+              <strong>Broadcaster</strong>
+              <span>Broadcast your trading activity.</span>
             </button>
 
             <button
               type="button"
-              className={role === 'follower' ? 'role-card active' : 'role-card'}
+              className={
+                role === 'follower' ? 'role-card active' : 'role-card'
+              }
               onClick={() => setRole('follower')}
             >
-              <strong>Register as Follower</strong>
-              <span>
-                Follow a broadcaster and manage your own Deriv trading
-                account.
-              </span>
+              <strong>Follower</strong>
+              <span>Follow a broadcaster using your own Deriv account.</span>
             </button>
           </div>
 
@@ -123,22 +175,8 @@ export default function RegisterPage() {
             >
               {submitting
                 ? 'Creating profile...'
-                : `Continue as ${role === 'broadcaster' ? 'Broadcaster' : 'Follower'}`}
+                : `Create ${role === 'broadcaster' ? 'Broadcaster' : 'Follower'} Profile`}
             </button>
-
-            {message ? <div className="feed-meta">{message}</div> : null}
-
-            {forexPulseId ? (
-              <div className="feed-meta">
-                <strong>Your Forex Pulse ID</strong>
-                <div style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: '0.35rem' }}>
-                  {forexPulseId}
-                </div>
-                <div style={{ marginTop: '0.35rem' }}>
-                  Keep this ID safe. It identifies your Forex Pulse profile.
-                </div>
-              </div>
-            ) : null}
 
             {error ? <div className="feed-meta">{error}</div> : null}
           </form>
